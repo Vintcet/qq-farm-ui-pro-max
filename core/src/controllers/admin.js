@@ -19,12 +19,13 @@ const { findAccountByRef, normalizeAccountRef, resolveAccountId } = require('../
 const { createModuleLogger } = require('../services/logger');
 const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
+const { validateSettings } = require('../services/config-validator');
+const security = require('../services/security');
 const userStore = require('../models/user-store');
 const usersController = require('./users');
 const cardsController = require('./cards');
 const { validateUsername, validatePassword, validateCardCode } = require('../utils/validators');
 
-const hashPassword = (pwd) => crypto.createHash('sha256').update(String(pwd || '')).digest('hex');
 const adminLogger = createModuleLogger('admin');
 
 let app = null;
@@ -173,32 +174,56 @@ function startAdminServer(dataProvider) {
     }
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
 
-    // 登录与鉴权 - 支持多用户
+    // 登录与鉴权 - 支持多用户 + PBKDF2 + 登录锁定
     app.post('/api/login', async (req, res) => {
         const { username, password } = req.body || {};
+        const clientIP = getClientIP(req);
+        const lockKey = username ? `user:${username}` : `ip:${clientIP}`;
 
-        // 兼容旧版：如果没有用户名，使用单管理员模式
+        // 登录锁定检查
+        const lockStatus = security.loginLock.checkLock(lockKey);
+        if (lockStatus.locked) {
+            const remainMin = Math.ceil(lockStatus.remainingMs / 60000);
+            return res.status(429).json({
+                ok: false,
+                error: `登录尝试过多，请 ${remainMin} 分钟后再试`,
+            });
+        }
+
         if (!username) {
             const input = String(password || '');
             const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
             let ok = false;
             if (storedHash) {
-                ok = hashPassword(input) === storedHash;
+                const verify = security.verifyPassword(input, storedHash);
+                ok = verify.valid;
+                if (ok && verify.needsMigration) {
+                    const newHash = security.hashPassword(input);
+                    store.setAdminPasswordHash(newHash);
+                    adminLogger.info('管理员密码已自动迁移为 PBKDF2 格式');
+                }
             } else {
                 ok = input === String(CONFIG.adminPassword || '');
+                if (ok) {
+                    const newHash = security.hashPassword(input);
+                    store.setAdminPasswordHash(newHash);
+                    adminLogger.info('管理员密码已从明文迁移为 PBKDF2 格式');
+                }
             }
             if (!ok) {
+                security.loginLock.recordFailure(lockKey);
                 return res.status(401).json({ ok: false, error: 'Invalid password' });
             }
+            security.loginLock.recordSuccess(lockKey);
             const token = issueToken();
             tokens.add(token);
             tokenUserMap.set(token, { username: 'admin', role: 'admin', card: null });
             return res.json({ ok: true, data: { token, user: { username: 'admin', role: 'admin', card: null } } });
         }
 
-        // 多用户登录
         const user = userStore.validateUser(username, password);
         if (!user) {
+            security.loginLock.recordFailure(lockKey);
             return res.status(401).json({ ok: false, error: '用户名或密码错误' });
         }
 
@@ -206,6 +231,7 @@ function startAdminServer(dataProvider) {
             return res.status(403).json({ ok: false, error: user.error });
         }
 
+        security.loginLock.recordSuccess(lockKey);
         const token = issueToken();
         tokens.add(token);
         tokenUserMap.set(token, user);
@@ -232,17 +258,23 @@ function startAdminServer(dataProvider) {
         const body = req.body || {};
         const oldPassword = String(body.oldPassword || '');
         const newPassword = String(body.newPassword || '');
-        if (newPassword.length < 4) {
-            return res.status(400).json({ ok: false, error: '新密码长度至少为 4 位' });
+
+        const strength = security.checkPasswordStrength(newPassword);
+        if (!strength.strong) {
+            return res.status(400).json({ ok: false, error: strength.errors.join('；') });
         }
+
         const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
-        const ok = storedHash
-            ? hashPassword(oldPassword) === storedHash
-            : oldPassword === String(CONFIG.adminPassword || '');
+        let ok = false;
+        if (storedHash) {
+            ok = security.verifyPassword(oldPassword, storedHash).valid;
+        } else {
+            ok = oldPassword === String(CONFIG.adminPassword || '');
+        }
         if (!ok) {
             return res.status(400).json({ ok: false, error: '原密码错误' });
         }
-        const nextHash = hashPassword(newPassword);
+        const nextHash = security.hashPassword(newPassword);
         if (store.setAdminPasswordHash) {
             store.setAdminPasswordHash(nextHash);
         }
@@ -341,7 +373,7 @@ function startAdminServer(dataProvider) {
         if (!id) return res.json({ ok: false, error: 'Missing x-account-id' });
 
         try {
-            const data = provider.getStatus(id);
+            const data = await provider.getStatus(id);
             if (data && data.status) {
                 const { level, exp } = data.status;
                 const progress = getLevelExpProgress(level, exp);
@@ -419,12 +451,23 @@ function startAdminServer(dataProvider) {
         const id = await getAccId(req);
         if (!id) return res.status(400).json({ ok: false });
         try {
-            const { getCachedFriends } = require('../services/database');
+            const { getCachedFriends, updateFriendsCache } = require('../services/database');
             let data = [];
             if (getCachedFriends) {
-                data = getCachedFriends(id);
+                data = await getCachedFriends(id);
             }
-            res.json({ ok: true, data });
+            // 缓存为空时回退到实时拉取（兼容 Worker 尚未同步或 Redis 未就绪）
+            if (Array.isArray(data) && data.length === 0 && provider && provider.getFriends) {
+                try {
+                    data = await provider.getFriends(id);
+                    if (Array.isArray(data) && data.length > 0 && updateFriendsCache) {
+                        updateFriendsCache(id, data).catch(() => { });
+                    }
+                } catch {
+                    // 忽略回退失败（如 Worker 未运行）
+                }
+            }
+            res.json({ ok: true, data: Array.isArray(data) ? data : [] });
         } catch (e) {
             handleApiError(res, e);
         }
@@ -545,6 +588,90 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 切换账号模式 (大号/小号/风险规避)
+    app.post('/api/accounts/:id/mode', accountOwnershipRequired, async (req, res) => {
+        try {
+            const resolvedId = await resolveAccId(req.params.id) || String(req.params.id || '');
+            const mode = String((req.body || {}).mode || '');
+
+            if (!store.ACCOUNT_MODE_PRESETS || !store.ACCOUNT_MODE_PRESETS[mode]) {
+                return res.status(400).json({ ok: false, error: 'Invalid account mode' });
+            }
+
+            // 大号唯一性约束：如果设置为大号，需降级同用户的其他大号
+            let downgraded = [];
+            if (mode === 'main') {
+                const accounts = await getAccountList();
+                const targetAcc = accounts.find(a => String(a.id) === resolvedId);
+                // 使用原用户名或者从请求上下文获取用户名
+                const ownerUsername = targetAcc ? targetAcc.username : (req.currentUser ? req.currentUser.username : 'admin');
+
+                if (ownerUsername && store.ensureMainAccountUnique) {
+                    downgraded = await store.ensureMainAccountUnique(resolvedId, ownerUsername);
+                }
+            }
+
+            // 应用模式
+            const updatedConfig = store.applyAccountMode(resolvedId, mode);
+
+            // 更新数据库持久化
+            const dbPayload = { account_mode: mode };
+            if (updatedConfig.harvestDelay) {
+                dbPayload.harvest_delay_min = updatedConfig.harvestDelay.min;
+                dbPayload.harvest_delay_max = updatedConfig.harvestDelay.max;
+            }
+            await accountRepository.updateConfig(resolvedId, dbPayload);
+
+            // 同步配置到 worker 进程
+            if (provider && typeof provider.broadcastConfig === 'function') {
+                provider.broadcastConfig(resolvedId);
+                // 同步降级的大号
+                for (const acc of downgraded) {
+                    const altConfig = store.getAccountConfigSnapshot(acc.id);
+                    const altPayload = { account_mode: 'alt' };
+                    if (altConfig.harvestDelay) {
+                        altPayload.harvest_delay_min = altConfig.harvestDelay.min;
+                        altPayload.harvest_delay_max = altConfig.harvestDelay.max;
+                    }
+                    await accountRepository.updateConfig(acc.id, altPayload);
+                    provider.broadcastConfig(acc.id);
+                }
+            }
+
+            adminLogger.info(`账号 ${resolvedId} 模式切换为 ${mode}`, { downgraded });
+
+            res.json({ ok: true, data: { config: updatedConfig, downgraded } });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 风险规避模式 - 基于历史封禁数据应用黑名单
+    app.post('/api/accounts/:id/safe-mode/apply-blacklist', accountOwnershipRequired, async (req, res) => {
+        try {
+            const resolvedId = await resolveAccId(req.params.id) || String(req.params.id || '');
+            // 该服务函数即将在 friend.js 中实现并挂载到 provider，或者从 friend 服务引出
+            // 为避免循环依赖等问题，直接调用 provider 的包装方法 (我们稍后将在 worker 层暴露它)
+            // 简单起见，这里先 require ../services/friend
+            const { generateSafeModeBlacklist } = require('../services/friend');
+
+            if (typeof generateSafeModeBlacklist !== 'function') {
+                return res.status(400).json({ ok: false, error: '安全巡查黑名单服务未就绪' });
+            }
+
+            const addedUins = await generateSafeModeBlacklist(resolvedId);
+
+            // 同步配置到 worker 进程
+            if (provider && typeof provider.broadcastConfig === 'function') {
+                provider.broadcastConfig(resolvedId);
+            }
+
+            res.json({ ok: true, data: { addedCount: addedUins.length, addedUins } });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     // API: 农场一键操作
     app.post('/api/farm/operate', accountOwnershipRequired, async (req, res) => {
         const id = await getAccId(req);
@@ -570,14 +697,53 @@ function startAdminServer(dataProvider) {
         }
     });
 
-    // API: 设置页统一保存（单次写入+单次广播）
+    // API: 设置页统一保存（单次写入+单次广播 + Schema 校验）
     app.post('/api/settings/save', accountOwnershipRequired, async (req, res) => {
         const id = await getAccId(req);
         if (!id) {
             return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
         }
         try {
-            const data = await provider.saveSettings(id, req.body || {});
+            const inputSettings = req.body || {};
+
+            // Phase 1 优化：对非 Admin 角色执行严格的休眠基线限制，防止封禁风控
+            if (req.currentUser?.role !== 'admin') {
+                const ints = inputSettings.intervals || {};
+                const checkBlock = (val, threshold) => {
+                    return val !== undefined && Number.parseInt(val, 10) < threshold;
+                };
+                if (checkBlock(ints.farm, 15) || checkBlock(ints.farmMin, 15) ||
+                    checkBlock(ints.friend, 60) || checkBlock(ints.friendMin, 60)) {
+                    return res.status(400).json({
+                        ok: false,
+                        error: '系统保护拦截：此配置设定的轮询时间过度短频，将导致腾讯 1002003 风控锁定。根据系统防线，普通用户农田循环下限为 15秒、好友巡查下限为 60秒。请上调参数后再保存！'
+                    });
+                }
+
+                const wfc = inputSettings.workflowConfig || {};
+                if (wfc.farm && checkBlock(wfc.farm.minInterval, 15)) {
+                    return res.status(400).json({ ok: false, error: '系统保护拦截：工作流 - 农场最低运行周期被限制为 15 秒' });
+                }
+                if (wfc.friend && checkBlock(wfc.friend.minInterval, 60)) {
+                    return res.status(400).json({ ok: false, error: '系统保护拦截：工作流 - 好友巡查最低运行周期被限制为 60 秒' });
+                }
+            }
+
+            const { strictValidation, ...settingsToValidate } = inputSettings;
+
+            const validation = validateSettings(settingsToValidate);
+            if (!validation.valid) {
+                adminLogger.warn('配置校验警告', { accountId: id, errors: validation.errors });
+                if (strictValidation === true) {
+                    return res.status(400).json({
+                        ok: false,
+                        error: '配置校验失败',
+                        errors: validation.errors,
+                    });
+                }
+            }
+
+            const data = await provider.saveSettings(id, validation.coerced || settingsToValidate);
             res.json({ ok: true, data: data || {} });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -619,6 +785,45 @@ function startAdminServer(dataProvider) {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const data = store.setOfflineReminder ? store.setOfflineReminder(body) : {};
             res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 获取系统级时间参数配置（仅管理员）
+    app.get('/api/settings/timing-config', authRequired, async (req, res) => {
+        try {
+            if (req.currentUser && req.currentUser.role !== 'admin') {
+                return res.status(403).json({ ok: false, error: 'Forbidden' });
+            }
+            const config = store.getTimingConfig();
+            const defaults = store.DEFAULT_TIMING_CONFIG;
+            // 第三层只读参数（操作级微延迟），仅展示不可修改
+            const readonlyParams = [
+                { key: 'friendOpSleep', label: '好友操作间延迟', value: '500-700ms + 随机', group: 'operations' },
+                { key: 'friendBatchSleep', label: '好友批次间延迟', value: '1000-4000ms + 随机', group: 'operations' },
+                { key: 'farmOpSleep', label: '农场操作间延迟', value: '400-700ms + 随机', group: 'operations' },
+                { key: 'warehouseOpSleep', label: '仓库操作间延迟', value: '200-300ms + 随机', group: 'operations' },
+                { key: 'sellBatchSleep', label: '批量出售间隔', value: '300ms', group: 'operations' },
+                { key: 'taskClaimSleep', label: '任务领取间隔', value: '300ms', group: 'operations' },
+                { key: 'mallClaimSleep', label: '商城领取间隔', value: '300ms', group: 'operations' },
+            ];
+            res.json({ ok: true, data: { config, defaults, readonlyParams } });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 保存系统级时间参数配置（仅管理员）
+    app.post('/api/settings/timing-config', authRequired, async (req, res) => {
+        try {
+            if (req.currentUser && req.currentUser.role !== 'admin') {
+                return res.status(403).json({ ok: false, error: 'Forbidden' });
+            }
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const data = store.setTimingConfig(body);
+            adminLogger.info('时间参数配置已更新', { config: data });
+            res.json({ ok: true, data });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -682,7 +887,7 @@ function startAdminServer(dataProvider) {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const rawRef = body.id || body.accountId || body.uin || req.headers['x-account-id'];
-            const accountList = getAccountList();
+            const accountList = await getAccountList();
             const target = findAccountByRef(accountList, rawRef);
             if (!target || !target.id) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
@@ -696,7 +901,7 @@ function startAdminServer(dataProvider) {
             const accountId = String(target.id);
             const data = await addOrUpdateAccount({ id: accountId, name: remark });
             if (provider && typeof provider.setRuntimeAccountName === 'function') {
-                provider.setRuntimeAccountName(accountId, remark);
+                await provider.setRuntimeAccountName(accountId, remark);
             }
             if (provider && provider.addAccountLog) {
                 provider.addAccountLog('update', `更新账号备注: ${remark}`, accountId, remark);
@@ -1148,7 +1353,7 @@ function startAdminServer(dataProvider) {
             timeFrom: req.query.timeFrom || '',
             timeTo: req.query.timeTo || '',
         };
-        let list = provider.getLogs(targetId, options);
+        let list = await provider.getLogs(targetId, options);
 
         // 兜底过滤: 如果 targetId 为空 (用户查询所有，但其实普通用户应该受限)
         if (!targetId && req.currentUser && req.currentUser.role !== 'admin') {
@@ -1177,7 +1382,7 @@ function startAdminServer(dataProvider) {
         if (_notificationsCache && (now - _notificationsCacheTime) < NOTIFICATIONS_CACHE_TTL) {
             return _notificationsCache;
         }
-        const logPath = path.join(__dirname, '../../../Update.log');
+        const logPath = path.join(__dirname, '../../../logs/development/Update.log');
         if (!fs.existsSync(logPath)) return [];
         const raw = fs.readFileSync(logPath, 'utf-8');
         // 按连续空行（2个以上换行）分割条目
@@ -1373,7 +1578,7 @@ function startAdminServer(dataProvider) {
                     }
 
                     if (jsRes && jsRes.Code === 0 && jsRes.Success && jsRes.Data) {
-                        const authCode = jsRes.Data.Code || '';
+                        const authCode = jsRes.Data.code || jsRes.Data.Code || '';
                         console.log(`[Ipad860 JSLogin] 登录成功! wxid=${wxid}, code=${authCode}, nickname=${nickname}`);
                         res.json({
                             ok: true,
@@ -1596,8 +1801,8 @@ function startAdminServer(dataProvider) {
                 socket.emit('status:update', { accountId: targetId, status: currentStatus });
             }
             if (provider && typeof provider.getLogs === 'function') {
-                // 这里针对 websocket 连接建立时的初始全量快照也需要过滤
-                let currentLogs = await provider.getLogs(targetId, { limit: 100 });
+                // 这里针对 websocket 连接建立时的初始全量快照也需要削减，防止 Vue 渲染时因为数千 DOM 产生卡顿
+                let currentLogs = await provider.getLogs(targetId, { limit: 40 });
                 if (!targetId && currentUser && currentUser.role !== 'admin') {
                     const allAccounts = await store.getAccounts();
                     const userAccountIds = allAccounts.accounts
@@ -1611,7 +1816,8 @@ function startAdminServer(dataProvider) {
                 });
             }
             if (provider && typeof provider.getAccountLogs === 'function') {
-                let currentAccountLogs = provider.getAccountLogs(100);
+                // 用于账号管理界面的初始日志，同样降低获取数
+                let currentAccountLogs = provider.getAccountLogs(40);
                 if (!targetId && currentUser && currentUser.role !== 'admin') {
                     const allAccounts = await store.getAccounts();
                     const userAccountIds = allAccounts.accounts

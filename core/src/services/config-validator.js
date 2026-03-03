@@ -1,0 +1,367 @@
+/**
+ * 配置 Schema 校验框架
+ *
+ * Schema 驱动的配置校验器：
+ *   - 类型检查、范围检查、枚举检查、正则检查
+ *   - 支持嵌套对象和数组
+ *   - 校验失败返回详细错误信息
+ *   - 支持自定义校验规则链
+ */
+
+const { createModuleLogger } = require('./logger');
+const validatorLogger = createModuleLogger('config-validator');
+
+// ============ 内置校验规则 ============
+
+const RULES = {
+    type(value, expected) {
+        if (expected === 'array') return Array.isArray(value);
+        if (expected === 'integer') return typeof value === 'number' && Number.isInteger(value);
+        if (expected === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value);
+        return typeof value === expected;
+    },
+
+    required(value) {
+        return value !== undefined && value !== null && value !== '';
+    },
+
+    min(value, min) {
+        if (typeof value === 'number') return value >= min;
+        if (typeof value === 'string') return value.length >= min;
+        if (Array.isArray(value)) return value.length >= min;
+        return true;
+    },
+
+    max(value, max) {
+        if (typeof value === 'number') return value <= max;
+        if (typeof value === 'string') return value.length <= max;
+        if (Array.isArray(value)) return value.length <= max;
+        return true;
+    },
+
+    enum(value, allowed) {
+        return Array.isArray(allowed) && allowed.includes(value);
+    },
+
+    pattern(value, regex) {
+        if (typeof value !== 'string') return false;
+        const re = typeof regex === 'string' ? new RegExp(regex) : regex;
+        return re.test(value);
+    },
+
+    custom(value, fn) {
+        if (typeof fn !== 'function') return true;
+        return fn(value);
+    },
+};
+
+// ============ Schema 定义 ============
+
+/**
+ * 定义项 Schema
+ *
+ * @example
+ * {
+ *   type: 'number',
+ *   required: true,
+ *   min: 1,
+ *   max: 86400,
+ *   default: 300,
+ *   label: '农场巡查间隔(秒)',
+ * }
+ *
+ * @example
+ * {
+ *   type: 'string',
+ *   enum: ['blacklist', 'whitelist'],
+ *   default: 'blacklist',
+ *   label: '过滤模式',
+ * }
+ */
+
+// ============ 校验器核心 ============
+
+class ConfigValidator {
+    /**
+     * @param {object} schema - 配置项 Schema 定义
+     * @param {object} options
+     * @param {boolean} options.strict - 严格模式(拒绝 schema 中未定义的字段)
+     * @param {boolean} options.coerce - 自动类型转换
+     */
+    constructor(schema = {}, options = {}) {
+        this.schema = schema;
+        this.strict = !!options.strict;
+        this.coerce = options.coerce !== false;
+    }
+
+    /**
+     * 校验配置对象
+     * @param {object} config - 待校验的配置
+     * @returns {{ valid: boolean, errors: string[], coerced: object }}
+     */
+    validate(config) {
+        const errors = [];
+        const coerced = {};
+        const input = config && typeof config === 'object' ? config : {};
+
+        for (const [key, rule] of Object.entries(this.schema)) {
+            const rawValue = input[key];
+            const label = rule.label || key;
+
+            if (rule.required && (rawValue === undefined || rawValue === null)) {
+                errors.push(`${label}: 必填项缺失`);
+                continue;
+            }
+
+            if (rawValue === undefined || rawValue === null) {
+                coerced[key] = rule.default !== undefined ? rule.default : rawValue;
+                continue;
+            }
+
+            let value = rawValue;
+
+            if (this.coerce && rule.type) {
+                value = this._coerce(rawValue, rule.type);
+            }
+
+            if (rule.type && !RULES.type(value, rule.type)) {
+                errors.push(`${label}: 类型错误，期望 ${rule.type}，实际 ${typeof value}`);
+                coerced[key] = rule.default !== undefined ? rule.default : value;
+                continue;
+            }
+
+            if (rule.min !== undefined && !RULES.min(value, rule.min)) {
+                errors.push(`${label}: 值 ${value} 小于最小值 ${rule.min}`);
+                if (this.coerce && typeof value === 'number') value = rule.min;
+            }
+
+            if (rule.max !== undefined && !RULES.max(value, rule.max)) {
+                errors.push(`${label}: 值 ${value} 超过最大值 ${rule.max}`);
+                if (this.coerce && typeof value === 'number') value = rule.max;
+            }
+
+            if (rule.enum && !RULES.enum(value, rule.enum)) {
+                errors.push(`${label}: 值 "${value}" 不在允许范围 [${rule.enum.join(', ')}]`);
+                coerced[key] = rule.default !== undefined ? rule.default : value;
+                continue;
+            }
+
+            if (rule.pattern && !RULES.pattern(value, rule.pattern)) {
+                errors.push(`${label}: 格式不合法`);
+                coerced[key] = rule.default !== undefined ? rule.default : value;
+                continue;
+            }
+
+            if (rule.custom && !RULES.custom(value, rule.custom)) {
+                errors.push(`${label}: 自定义校验失败`);
+                coerced[key] = rule.default !== undefined ? rule.default : value;
+                continue;
+            }
+
+            if (rule.properties && typeof value === 'object' && !Array.isArray(value)) {
+                const nested = new ConfigValidator(rule.properties, { strict: this.strict, coerce: this.coerce });
+                const result = nested.validate(value);
+                if (!result.valid) {
+                    errors.push(...result.errors.map(e => `${label}.${e}`));
+                }
+                value = result.coerced;
+            }
+
+            coerced[key] = value;
+        }
+
+        if (this.strict) {
+            for (const key of Object.keys(input)) {
+                if (!this.schema[key]) {
+                    errors.push(`未知配置项: ${key}`);
+                }
+            }
+        }
+
+        for (const key of Object.keys(input)) {
+            if (coerced[key] === undefined) {
+                coerced[key] = input[key];
+            }
+        }
+
+        return {
+            valid: errors.length === 0,
+            errors,
+            coerced,
+        };
+    }
+
+    _coerce(value, type) {
+        if (type === 'number' || type === 'integer') {
+            const n = Number(value);
+            if (Number.isFinite(n)) return type === 'integer' ? Math.round(n) : n;
+        }
+        if (type === 'boolean') {
+            if (typeof value === 'string') {
+                if (value === 'true' || value === '1') return true;
+                if (value === 'false' || value === '0') return false;
+            }
+            return !!value;
+        }
+        if (type === 'string') {
+            return String(value);
+        }
+        return value;
+    }
+}
+
+// ============ 预定义 Schema ============
+
+const AUTOMATION_SCHEMA = {
+    farm: { type: 'boolean', default: true, label: '自动种地' },
+    farm_push: { type: 'boolean', default: true, label: '推送触发巡田' },
+    land_upgrade: { type: 'boolean', default: true, label: '自动升级土地' },
+    friend: { type: 'boolean', default: true, label: '好友互动总开关' },
+    friend_help_exp_limit: { type: 'boolean', default: true, label: '帮忙经验上限停止' },
+    friend_steal: { type: 'boolean', default: true, label: '偷菜' },
+    friend_help: { type: 'boolean', default: true, label: '帮忙' },
+    friend_bad: { type: 'boolean', default: false, label: '捣乱' },
+    task: { type: 'boolean', default: true, label: '每日任务' },
+    email: { type: 'boolean', default: true, label: '邮箱' },
+    fertilizer_gift: { type: 'boolean', default: false, label: '肥料礼包' },
+    fertilizer_buy: { type: 'boolean', default: false, label: '自动购肥' },
+    free_gifts: { type: 'boolean', default: true, label: '免费礼包' },
+    share_reward: { type: 'boolean', default: true, label: '分享奖励' },
+    vip_gift: { type: 'boolean', default: true, label: 'VIP 礼包' },
+    month_card: { type: 'boolean', default: true, label: '月卡' },
+    open_server_gift: { type: 'boolean', default: true, label: '开服礼包' },
+    sell: { type: 'boolean', default: true, label: '自动出售' },
+    friend_auto_accept: { type: 'boolean', default: false, label: '自动同意好友' },
+    friend_three_phase: { type: 'boolean', default: false, label: '三阶段巡查模式' },
+    auto_blacklist_banned: { type: 'boolean', default: true, label: '被封禁好友自动加黑' },
+    fertilizer_60s_anti_steal: { type: 'boolean', default: false, label: '60秒防偷' },
+    fertilizer: { type: 'string', enum: ['both', 'normal', 'organic', 'none'], default: 'none', label: '施肥策略' },
+};
+
+const INTERVALS_SCHEMA = {
+    farm: { type: 'integer', min: 1, max: 86400, default: 300, label: '农场巡查间隔(秒)' },
+    friend: { type: 'integer', min: 1, max: 86400, default: 900, label: '好友巡查间隔(秒)' },
+    farmMin: { type: 'integer', min: 1, max: 86400, default: 30, label: '农场最小间隔(秒)' },
+    farmMax: { type: 'integer', min: 1, max: 86400, default: 200, label: '农场最大间隔(秒)' },
+    friendMin: { type: 'integer', min: 1, max: 86400, default: 100, label: '好友最小间隔(秒)' },
+    friendMax: { type: 'integer', min: 1, max: 86400, default: 600, label: '好友最大间隔(秒)' },
+};
+
+const FRIEND_QUIET_HOURS_SCHEMA = {
+    enabled: { type: 'boolean', default: true, label: '静默时段开关' },
+    start: { type: 'string', pattern: /^\d{1,2}:\d{2}$/, default: '23:00', label: '静默开始时间' },
+    end: { type: 'string', pattern: /^\d{1,2}:\d{2}$/, default: '07:00', label: '静默结束时间' },
+};
+
+const STEAL_FILTER_SCHEMA = {
+    enabled: { type: 'boolean', default: false, label: '偷菜过滤开关' },
+    mode: { type: 'string', enum: ['blacklist', 'whitelist'], default: 'blacklist', label: '过滤模式' },
+    plantIds: { type: 'array', default: [], label: '植物ID列表' },
+};
+
+const STAKEOUT_STEAL_SCHEMA = {
+    enabled: { type: 'boolean', default: false, label: '蹲守偷菜开关' },
+    delaySec: { type: 'integer', min: 0, max: 60, default: 3, label: '蹲守延迟(秒)' },
+};
+
+const STEAL_FRIEND_FILTER_SCHEMA = {
+    enabled: { type: 'boolean', default: false, label: '好友过滤开关' },
+    mode: { type: 'string', enum: ['blacklist', 'whitelist'], default: 'blacklist', label: '好友过滤模式' },
+    friendIds: { type: 'array', default: [], label: '好友ID列表' },
+};
+
+const WORKFLOW_SCOPE_SCHEMA = {
+    enabled: { type: 'boolean', default: false, label: '工作流开关' },
+    minInterval: { type: 'integer', min: 1, max: 86400, default: 30, label: '最小间隔(秒)' },
+    maxInterval: { type: 'integer', min: 1, max: 86400, default: 120, label: '最大间隔(秒)' },
+    nodes: { type: 'array', default: [], label: '节点列表' },
+};
+
+const WORKFLOW_CONFIG_SCHEMA = {
+    farm: {
+        type: 'object',
+        label: '农场工作流',
+        properties: WORKFLOW_SCOPE_SCHEMA,
+    },
+    friend: {
+        type: 'object',
+        label: '好友工作流',
+        properties: WORKFLOW_SCOPE_SCHEMA,
+    },
+};
+
+const SETTINGS_SCHEMA = {
+    automation: {
+        type: 'object',
+        label: '自动化配置',
+        properties: AUTOMATION_SCHEMA,
+    },
+    intervals: {
+        type: 'object',
+        label: '间隔配置',
+        properties: INTERVALS_SCHEMA,
+    },
+    friendQuietHours: {
+        type: 'object',
+        label: '静默时段',
+        properties: FRIEND_QUIET_HOURS_SCHEMA,
+    },
+    stealFilter: {
+        type: 'object',
+        label: '偷菜过滤',
+        properties: STEAL_FILTER_SCHEMA,
+    },
+    stealFriendFilter: {
+        type: 'object',
+        label: '好友偷菜过滤',
+        properties: STEAL_FRIEND_FILTER_SCHEMA,
+    },
+    stakeoutSteal: {
+        type: 'object',
+        label: '蹲守偷菜',
+        properties: STAKEOUT_STEAL_SCHEMA,
+    },
+    plantingStrategy: {
+        type: 'string',
+        enum: ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit'],
+        default: 'preferred',
+        label: '种植策略',
+    },
+    preferredSeedId: {
+        type: 'integer',
+        min: 0,
+        default: 0,
+        label: '偏好种子ID',
+    },
+    workflowConfig: {
+        type: 'object',
+        label: '工作流编排',
+        properties: WORKFLOW_CONFIG_SCHEMA,
+    },
+};
+
+/**
+ * 校验设置保存请求
+ * @param {object} settings - 前端提交的设置
+ * @returns {{ valid: boolean, errors: string[], coerced: object }}
+ */
+function validateSettings(settings) {
+    const validator = new ConfigValidator(SETTINGS_SCHEMA, { coerce: true });
+    const result = validator.validate(settings);
+
+    if (!result.valid) {
+        validatorLogger.warn('配置校验失败', { errors: result.errors });
+    }
+
+    return result;
+}
+
+module.exports = {
+    ConfigValidator,
+    validateSettings,
+    SETTINGS_SCHEMA,
+    AUTOMATION_SCHEMA,
+    INTERVALS_SCHEMA,
+    STEAL_FRIEND_FILTER_SCHEMA,
+    WORKFLOW_CONFIG_SCHEMA,
+};

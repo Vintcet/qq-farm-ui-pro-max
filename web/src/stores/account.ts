@@ -8,7 +8,9 @@ export interface Account {
   name: string
   nick?: string
   uin?: number
+  avatar?: string
   running?: boolean
+  accountMode?: 'main' | 'alt' | 'safe'
   // Add other fields as discovered
 }
 
@@ -115,6 +117,28 @@ export const useAccountStore = defineStore('account', () => {
     }
   }
 
+  async function updateAccountMode(id: string, mode: string) {
+    try {
+      await api.post(`/api/accounts/${id}/mode`, { mode })
+      await fetchAccounts()
+    }
+    catch (e) {
+      console.error('更新账号模式失败', e)
+      throw e
+    }
+  }
+
+  async function applySafeModeBlacklist(id: string) {
+    try {
+      const res = await api.post(`/api/accounts/${id}/safe-mode/apply-blacklist`)
+      return res.data
+    }
+    catch (e) {
+      console.error('应用风险规避黑名单失败', e)
+      throw e
+    }
+  }
+
   return {
     accounts,
     currentAccountId,
@@ -129,6 +153,8 @@ export const useAccountStore = defineStore('account', () => {
     fetchLogs,
     addAccount,
     updateAccount,
+    updateAccountMode,
+    applySafeModeBlacklist,
     setCurrentAccount,
   }
 })

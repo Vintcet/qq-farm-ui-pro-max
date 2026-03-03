@@ -15,6 +15,7 @@ const { getShareFilePath } = require('../config/runtime-paths');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, log, logWarn, sleep } = require('../utils/utils');
+const store = require('../models/store');
 const { readTextFile, writeTextFileAtomic } = require('./json-db');
 
 /**
@@ -23,17 +24,17 @@ const { readTextFile, writeTextFileAtomic } = require('./json-db');
  */
 function parseShareLink(link) {
     const result = { uid: null, openid: null, shareSource: null, docId: null };
-    
+
     // 移除开头的 ? 如果有
     const queryStr = link.startsWith('?') ? link.slice(1) : link;
-    
+
     // 解析参数
     const params = new URLSearchParams(queryStr);
     result.uid = params.get('uid');
     result.openid = params.get('openid');
     result.shareSource = params.get('share_source');
     result.docId = params.get('doc_id');
-    
+
     return result;
 }
 
@@ -48,10 +49,10 @@ function readShareFile() {
         const lines = content.split('\n')
             .map(line => line.trim())
             .filter(line => line.length > 0 && line.includes('openid='));
-        
+
         const invites = [];
         const seenUids = new Set();  // 用于去重
-        
+
         for (const line of lines) {
             const parsed = parseShareLink(line);
             if (parsed.openid && parsed.uid) {
@@ -62,7 +63,7 @@ function readShareFile() {
                 }
             }
         }
-        
+
         return invites;
     } catch (e) {
         logWarn('邀请', `读取 share.txt 失败: ${e.message}`);
@@ -81,13 +82,15 @@ async function sendReportArkClick(sharerId, sharerOpenId, shareSource) {
         share_cfg_id: toLong(shareSource || 0),
         scene_id: '1256',  // 模拟微信场景
     })).finish();
-    
+
     const { body: replyBody } = await sendMsgAsync('gamepb.userpb.UserService', 'ReportArkClick', body);
     return types.ReportArkClickReply.decode(replyBody);
 }
 
-// 请求间隔时间（毫秒）
-const INVITE_REQUEST_DELAY = 2000;
+// 请求间隔时间（毫秒）- 从全局时间参数配置动态读取
+function getInviteRequestDelay() {
+    try { return store.getTimingConfig().inviteRequestDelay || 2000; } catch { return 2000; }
+}
 
 /**
  * 处理邀请码列表
@@ -99,20 +102,20 @@ async function processInviteCodes() {
         log('邀请', '当前为 QQ 环境，跳过邀请码处理（仅微信支持）');
         return;
     }
-    
+
     const invites = readShareFile();
     if (invites.length === 0) {
         return;
     }
-    
+
     log('邀请', `读取到 ${invites.length} 个邀请码（已去重），开始逐个处理...`);
-    
+
     let successCount = 0;
     let failCount = 0;
-    
+
     for (let i = 0; i < invites.length; i++) {
         const invite = invites[i];
-        
+
         try {
             // 发送 ReportArkClick 请求，模拟点击分享链接
             await sendReportArkClick(invite.uid, invite.openid, invite.shareSource);
@@ -122,15 +125,15 @@ async function processInviteCodes() {
             failCount++;
             logWarn('邀请', `[${i + 1}/${invites.length}] 向 uid=${invite.uid} 发送申请失败: ${e.message}`);
         }
-        
+
         // 每个请求之间延迟，避免请求过快被限流
         if (i < invites.length - 1) {
-            await sleep(INVITE_REQUEST_DELAY);
+            await sleep(getInviteRequestDelay());
         }
     }
-    
+
     log('邀请', `处理完成: 成功 ${successCount}, 失败 ${failCount}`);
-    
+
     // 处理完成后清空文件
     clearShareFile();
 }

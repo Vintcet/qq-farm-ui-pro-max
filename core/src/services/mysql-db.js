@@ -75,12 +75,14 @@ async function initMysql() {
         await tempPool.end();
 
         // 检查核心表结构是否缺失，若缺失则自动执行初始化建表脚本
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const migrationsDir = path.join(__dirname, '../database/migrations');
+
         const [rows] = await pool.execute(`SHOW TABLES LIKE 'accounts'`);
         if (rows.length === 0) {
             logger.info('检测到空载数据库，正在自动执行建表初始化...');
-            const fs = require('node:fs');
-            const path = require('node:path');
-            const initSqlPath = path.join(__dirname, '../database/migrations/001-init_mysql.sql');
+            const initSqlPath = path.join(migrationsDir, '001-init_mysql.sql');
             if (fs.existsSync(initSqlPath)) {
                 const initConn = await mysql.createConnection({
                     host: DB_HOST,
@@ -96,6 +98,30 @@ async function initMysql() {
                 logger.info('✅ MySQL 核心表结构自动初始化完成');
             } else {
                 logger.error('❌ 缺失 MySQL 初始化脚本: 001-init_mysql.sql');
+            }
+        } else {
+            // accounts 表已存在，检查并执行增量迁移（如 005-add-avatar）
+            const [cols] = await pool.execute(
+                `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'accounts' AND COLUMN_NAME = 'avatar'`,
+                [DB_NAME]
+            );
+            if (cols.length === 0) {
+                const avatarMigrationPath = path.join(migrationsDir, '005-add-avatar.sql');
+                if (fs.existsSync(avatarMigrationPath)) {
+                    logger.info('检测到 accounts 表缺少 avatar 列，正在执行迁移 005-add-avatar.sql...');
+                    const migConn = await mysql.createConnection({
+                        host: DB_HOST,
+                        port: DB_PORT,
+                        user: DB_USER,
+                        password: DB_PASS,
+                        database: DB_NAME,
+                        multipleStatements: true
+                    });
+                    const migSql = fs.readFileSync(avatarMigrationPath, 'utf8');
+                    await migConn.query(migSql);
+                    await migConn.end();
+                    logger.info('✅ avatar 列迁移完成');
+                }
             }
         }
 

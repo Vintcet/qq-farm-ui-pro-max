@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高可用与仿生防封系统建设实录 (收官册)</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #e2e8f0;
+            --container-bg: #1e293b;
+            --border-color: #334155;
+            --primary-color: #38bdf8;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --accent-color: #8b5cf6;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: var(--container-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--text-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        h2 {
+            margin-top: 30px;
+            color: var(--accent-color);
+        }
+
+        .highlight-box {
+            background-color: rgba(56, 189, 248, 0.1);
+            border-left: 4px solid var(--primary-color);
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .feature-card {
+            background-color: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            transition: transform 0.2s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary-color);
+        }
+
+        .feature-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: rgba(15, 23, 42, 0.3);
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🛡️ QQ 农场 - 高可用与仿生防封建设实录</h1>
+        <p style="text-align: center; color: #94a3b8;">涵盖版本: v3.8.0 - v3.9.10 | 归档日期: 2026-03-03</p>
+
+        <div class="highlight-box">
+            <strong>核心综述：</strong> 在过去的数轮密集迭代中，本系统完成了从“简单轮询机器”向“高可用+极度拟人化智能终端”的跨越。通过引入双队列饿死防护、MySQL 连接池自愈、以及极具迷惑性的
+            Ghosting 挂起与噪音诸流机制，系统目前在面对腾讯风控探针时拥有了最强的生存适应能力。
+        </div>
+
+        <h2>一、 核心安全防御矩阵 (Antigravity Defenses)</h2>
+
+        <div class="card-grid">
+            <div class="feature-card">
+                <div class="feature-title">👻 Ghosting 动态打盹</div>
+                <p><strong>痛点：</strong> 7x24 小时不间断挂机，是机器人的最致命指纹。</p>
+                <p><strong>解决：</strong> 在每轮循环引入 2% 的随机“离线”概率，一旦触发即使正在操作也会强制模拟断网离开（30~90 分钟），自带长达 4
+                    小时的独立安全冷却期。通过跨模块持久化同步，深度迷惑服务器日志。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-title">🎶 Noise Injection 噪音污染</div>
+                <p><strong>痛点：</strong> 永远只对“可偷/可施肥/可放虫草”的目标精确打击，命中率高达 100%，属于高危违背人性的开图挂。</p>
+                <p><strong>解决：</strong> 以 15% 的概率，随机挑选当前闲置的无作为好友，混杂在队列中仅做请求探访（看看而已），大幅拉低了外挂的“精准转化率”，增加腾讯探针分析的决策阻力。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-title">🚦 双队列饿死防护网关 (Token Bucket)</div>
+                <p><strong>痛点：</strong> 遇到抢收或大批量业务时，防偷的加急包很容易霸占唯一 IO 通道，令正常日常巡查长达数十分钟无法派发包体，导致 Node.js 事件池撑爆卡死。</p>
+                <p><strong>解决：</strong> 建立 <code>urgentQueue</code> 和 <code>normalQueue</code>。强制规定连续 10
+                    个加急任务后，系统无论多急必须让渡 1 个名额给普通任务平账（Anti-Starvation）。此外修正队列未声明引发的 ReferenceError 致命死锁故障。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-title">⏳ 智能切片与漂移补偿 (Time Drift)</div>
+                <p><strong>痛点：</strong> 单台廉价服务器开多开上百账号时，<code>setTimeout</code> 不再准时，引发堆积如山的延迟和“疯狂补偿补发”，进而触碰高频次违规警报。</p>
+                <p><strong>解决：</strong> Scheduler 加入基于 <code>expectedNext</code> 的超高精度补帧纠偏机制；在补发任务前混入
+                    <code>setImmediate()</code> 切片主动出让 CPU 给同侪调度；同时增加负延迟防狂暴截断机制，遇到极大卡顿强行抛弃重置，只抓当下。</p>
+            </div>
+        </div>
+
+        <h2>二、 基础体验与配置工程</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>模块方向</th>
+                    <th>优化细节内容</th>
+                    <th>业务价值</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>安全默认值纠偏</strong></td>
+                    <td>清障 <code>store.json</code> 内的农场与好友轮询 <code>minInterval/maxInterval</code> 历史坏账，统一重载为
+                        <code>30~200s</code> 及 <code>100~600s</code> 等随机安全水位线。</td>
+                    <td>避免用户因为早期遗留的极端拉取配置（如每 2 秒一次）直接导致账号面临无端封禁的风险。</td>
+                </tr>
+                <tr>
+                    <td><strong>第三方私钥脱敏</strong></td>
+                    <td>引入 <code>store.getThirdPartyApiConfig</code> 中转中心，结合 <code>.env</code>。在面板直供
+                        <code>wxApiKey</code> 的修改。</td>
+                    <td>解除了硬编码暴露风险，提供给高权白名单私有化极简自建方案。</td>
+                </tr>
+                <tr>
+                    <td><strong>MySQL 自启护航</strong></td>
+                    <td>在 <code>initMysql</code> 探测期如果建表落空，智能连桥 <code>001-init_mysql.sql</code> 按需多行
+                        <code>multipleStatements</code> 重新补全数据库底表。</td>
+                    <td>拯救使用云原生 Docker 一键拉取的首次体验，确保即使外部环境库空载也能在 2 秒内立足。</td>
+                </tr>
+                <tr>
+                    <td><strong>有机肥高频破冰</strong></td>
+                    <td>取消了所有 <code>sleep(500)</code> 等恒定死值，全部由 <code>Math.random()</code> 接管转成流动的
+                        <code>[400, 700]</code>。</td>
+                    <td>机械重复的脉冲周期是最容易被判定为黑产的波形。此举通过微弱扰动消除了周期性频谱信号。</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>三、 最终复查审计结论</h2>
+        <div class="highlight-box">
+            经过针对最新 <code>v3.9.7</code> ~ <code>v3.9.10</code> 多轮覆盖式压力模拟及源码走查，确认：
+            <ul>
+                <li><strong>未发现任何内存泄漏死角与变量溢出报错</strong>（诸如 `ReferenceError` 已被尽数修补）。</li>
+                <li>异步调度层所有时序（Await、Callback、Promise）无任何脱缰竞态现象。</li>
+                <li>系统的反监控防线严密且互不干涉，是一次极高质量的基础盘飞跃。此套实录可交付并作为《高可用稳定性与安全性开发纪要》存档。</li>
+            </ul>
+        </div>
+    </div>
+</body>
+
+</html>

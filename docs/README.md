@@ -15,27 +15,30 @@
 
 ### 使用指南
 
-4. **[设置指南](./SETTINGS_GUIDE.md)** - 详细配置说明
-5. **[数据库升级](./DATABASE_QUICKSTART.md)** - SQLite 迁移指南
-6. **[帮助中心实现](./HELP_CENTER_IMPLEMENTATION.md)** - 帮助系统说明
+4. **[使用手册](./USER_MANUAL.md)** - 完整使用手册与攻略（推荐）
+5. **[设置指南](./guides/SETTINGS_GUIDE.md)** - 详细配置说明
+6. **[数据库升级](./DATABASE_QUICKSTART.md)** - SQLite 迁移指南
+7. **[帮助中心实现](./HELP_CENTER_IMPLEMENTATION.md)** - 帮助系统说明
 
 ### 开发文档
 
-7. **[API 参考](./API_REFERENCE.md)** - 完整 API 文档
-8. **[配置模板](./CONFIG_TEMPLATES.md)** - 常用配置示例
-9. **[性能基准](./PERFORMANCE_BENCHMARK.md)** - 性能测试报告
+8. **[API 参考](./API_REFERENCE.md)** - 完整 API 文档
+9. **[配置模板](./CONFIG_TEMPLATES.md)** - 常用配置示例
+10. **[性能基准](./PERFORMANCE_BENCHMARK.md)** - 性能测试报告
+11. **[Async 调用规范](./ASYNC_调用规范.md)** - Provider 与异步调用规范
+12. **[回归测试清单](./REGRESSION_TEST_CHECKLIST.md)** - 功能回归验证清单
 
 ### 部署运维
 
-10. **[部署指南](./DEPLOYMENT_GUIDE.md)** - 生产环境部署
-11. **[故障排除](./TROUBLESHOOTING.md)** - 常见问题解决
-12. **[截图指南](./SCREENSHOT_GUIDE.md)** - 截图最佳实践
+13. **[部署指南](./guides/DEPLOYMENT_GUIDE.md)** - 生产环境部署
+14. **[故障排除](./guides/TROUBLESHOOTING.md)** - 常见问题解决
+15. **[截图指南](./SCREENSHOT_GUIDE.md)** - 截图最佳实践
 
 ### 架构设计
 
-13. **[数据库迁移](./DATABASE_MIGRATION_GUIDE.md)** - 迁移详细过程
-14. **[业务架构解析](./业务架构解析/)** - 系统架构说明
-15. **[更新日志](../CHANGELOG.DEVELOPMENT.md)** - 版本历史
+16. **[数据库迁移](./DATABASE_MIGRATION_GUIDE.md)** - 迁移详细过程
+17. **[业务架构解析](./业务架构解析/)** - 系统架构说明
+18. **[更新日志](../CHANGELOG.DEVELOPMENT.md)** - 版本历史
 
 ---
 
@@ -48,7 +51,8 @@
 - → 查看 [Docker 部署](./DEPLOYMENT_GUIDE.md#方案三-docker-部署)
 
 **配置和优化**
-- → 查看 [设置指南](./SETTINGS_GUIDE.md)
+- → 查看 [使用手册](./USER_MANUAL.md)
+- → 查看 [设置指南](./guides/SETTINGS_GUIDE.md)
 - → 查看 [配置模板](./CONFIG_TEMPLATES.md)
 - → 查看 [性能基准](./PERFORMANCE_BENCHMARK.md)
 
@@ -67,6 +71,7 @@
 | 文档 | 状态 | 难度 | 时间 |
 |------|------|------|------|
 | [README](../README.md) | ✅ 完成 | ⭐ | 5 分钟 |
+| [使用手册](./USER_MANUAL.md) | ✅ 完成 | ⭐⭐ | 30 分钟 |
 | [API 参考](./API_REFERENCE.md) | ✅ 完成 | ⭐⭐⭐ | 30 分钟 |
 | [部署指南](./DEPLOYMENT_GUIDE.md) | ✅ 完成 | ⭐⭐ | 20 分钟 |
 | [故障排除](./TROUBLESHOOTING.md) | ✅ 完成 | ⭐⭐ | 15 分钟 |

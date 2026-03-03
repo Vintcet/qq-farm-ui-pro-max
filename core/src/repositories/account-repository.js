@@ -19,6 +19,7 @@ class AccountRepository {
                     a.status,
                     a.api_error_count,
                     a.username,
+                    a.avatar,
                     a.auth_data,
                     a.created_at,
                     a.updated_at,
@@ -32,6 +33,9 @@ class AccountRepository {
                     c.interval_friend,
                     c.steal_filter_enabled,
                     c.steal_filter_mode,
+                    c.account_mode,
+                    c.harvest_delay_min,
+                    c.harvest_delay_max,
                     c.advanced_settings
                 FROM accounts a
                 LEFT JOIN account_configs c ON a.id = c.account_id
@@ -72,6 +76,7 @@ class AccountRepository {
                     a.status,
                     a.api_error_count,
                     a.username,
+                    a.avatar,
                     a.created_at,
                     a.updated_at,
                     c.automation_farm,
@@ -83,7 +88,10 @@ class AccountRepository {
                     c.interval_farm,
                     c.interval_friend,
                     c.steal_filter_enabled,
-                    c.steal_filter_mode
+                    c.steal_filter_mode,
+                    c.account_mode,
+                    c.harvest_delay_min,
+                    c.harvest_delay_max
                 FROM accounts a
                 LEFT JOIN account_configs c ON a.id = c.account_id
                 ORDER BY a.created_at DESC
@@ -121,12 +129,13 @@ class AccountRepository {
                 SELECT 
                     a.id, a.uin, a.nick, a.name, a.platform, 
                     a.running, a.status, a.api_error_count, 
-                    a.username, a.created_at, a.updated_at,
+                    a.username, a.avatar, a.created_at, a.updated_at,
                     c.automation_farm, c.automation_friend,
                     c.automation_friend_steal, c.automation_friend_help,
                     c.planting_strategy, c.preferred_seed_id,
                     c.interval_farm, c.interval_friend,
-                    c.steal_filter_enabled, c.steal_filter_mode
+                    c.steal_filter_enabled, c.steal_filter_mode,
+                    c.account_mode, c.harvest_delay_min, c.harvest_delay_max
                     ${jsonFields}
                 FROM accounts a
                 LEFT JOIN account_configs c ON a.id = c.account_id
@@ -191,13 +200,37 @@ class AccountRepository {
         }
     }
 
+    /**
+     * 根据登录用户名查询该用户下所有农场账号
+     * 用于大号唯一性约束检查
+     * @param {string} username - 登录用户名 (accounts.username)
+     * @returns {Array} 该用户下的所有账号
+     */
+    async findByUsername(username) {
+        try {
+            const pool = getPool();
+            const [rows] = await pool.execute(`
+                SELECT a.id, a.uin, a.nick, a.name, a.platform, a.running, a.username,
+                       c.account_mode, c.harvest_delay_min, c.harvest_delay_max
+                FROM accounts a
+                LEFT JOIN account_configs c ON a.id = c.account_id
+                WHERE a.username = ?
+                ORDER BY a.created_at ASC
+            `, [username]);
+            return rows;
+        } catch (error) {
+            logger.error('根据用户名查询账号失败:', error);
+            throw error;
+        }
+    }
+
     async create(accountData) {
         try {
             return await transaction(async (connection) => {
                 // 1. 插入账号
                 const [accountResult] = await connection.execute(`
-                    INSERT INTO accounts (uin, nick, name, platform, running, username, auth_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO accounts (uin, nick, name, platform, running, username, avatar, auth_data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 `, [
                     accountData.uin,
                     accountData.nick || '',
@@ -205,6 +238,7 @@ class AccountRepository {
                     accountData.platform || 'qq',
                     0,
                     accountData.username || '',
+                    accountData.avatar || null,
                     accountData.auth_data ? JSON.stringify(accountData.auth_data) : '{}'
                 ]);
 

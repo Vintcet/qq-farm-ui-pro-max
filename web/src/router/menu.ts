@@ -18,8 +18,8 @@ export const menuRoutes: MenuItem[] = [
   {
     path: 'personal',
     name: 'personal',
-    label: '个人',
-    icon: 'i-carbon-user',
+    label: '农场预览',
+    icon: 'i-carbon-sprout',
     component: () => import('@/views/Personal.vue'),
   },
   {
@@ -46,8 +46,8 @@ export const menuRoutes: MenuItem[] = [
   {
     path: 'analytics',
     name: 'analytics',
-    label: '分析',
-    icon: 'i-carbon-analytics',
+    label: '作物图鉴',
+    icon: 'i-carbon-catalog',
     component: () => import('@/views/Analytics.vue'),
   },
   {

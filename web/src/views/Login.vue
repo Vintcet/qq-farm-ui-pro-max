@@ -3,7 +3,9 @@ import { useStorage } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
+import { adminToken } from '@/utils/auth'
 import NotificationPanel from '@/components/NotificationPanel.vue'
+import DisclaimerModal from '@/components/DisclaimerModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { useAppStore } from '@/stores/app'
@@ -16,7 +18,10 @@ const password = ref('')
 const cardCode = ref('')
 const error = ref('')
 const loading = ref(false)
-const token = useStorage('admin_token', '')
+
+// 免责声明拦截状态
+const showDisclaimer = ref(false)
+const pendingAuthData = ref<any>(null)
 
 // 记住用户名
 const rememberUsername = useStorage('remember_username', false)
@@ -136,15 +141,9 @@ async function handleLogin() {
       password: password.value,
     })
     if (res.data.ok) {
-      token.value = res.data.data.token
-      saveCurrentUser(res.data.data.user)
-      if (rememberUsername.value) {
-        savedUsername.value = username.value
-      }
-      else {
-        savedUsername.value = ''
-      }
-      router.push('/')
+      // 拦截写入，唤起免责弹窗
+      pendingAuthData.value = res.data.data
+      showDisclaimer.value = true
     }
     else {
       error.value = res.data.error || '登录失败'
@@ -156,6 +155,28 @@ async function handleLogin() {
   finally {
     loading.value = false
   }
+}
+
+// 免责声明统一处理方法
+function onDisclaimerAgree() {
+  if (pendingAuthData.value) {
+    adminToken.value = pendingAuthData.value.token
+    saveCurrentUser(pendingAuthData.value.user)
+    if (rememberUsername.value) {
+      savedUsername.value = username.value
+    }
+    else {
+      savedUsername.value = ''
+    }
+    showDisclaimer.value = false
+    router.push('/')
+  }
+}
+
+function onDisclaimerDecline() {
+  pendingAuthData.value = null
+  showDisclaimer.value = false
+  error.value = '您已拒绝免责声明协议，无法继续使用本软件。'
 }
 
 function validateRegisterForm() {
@@ -201,9 +222,9 @@ async function handleRegister() {
       cardCode: cardCode.value,
     })
     if (res.data.ok) {
-      token.value = res.data.data.token
-      saveCurrentUser(res.data.data.user)
-      router.push('/')
+      // 拦截写入，唤起免责弹窗
+      pendingAuthData.value = res.data.data
+      showDisclaimer.value = true
     }
     else {
       error.value = res.data.error || '注册失败'
@@ -241,7 +262,7 @@ const backgroundStyle = computed(() => {
     <div class="relative z-10 mx-4 max-w-5xl w-full lg:mx-auto">
       <div class="glass-panel flex flex-col overflow-hidden rounded-3xl shadow-2xl shadow-black/20 ring-1 ring-white/20 lg:flex-row">
         <!-- 左侧：品牌展示区 -->
-        <div class="relative flex flex-col items-center justify-center from-blue-600/95 via-indigo-600/95 to-purple-700/95 bg-gradient-to-br p-10 text-center text-white lg:w-5/12">
+        <div class="login-brand-panel relative flex flex-col items-center justify-center p-10 text-center text-white lg:w-5/12">
           <!-- 装饰背景 -->
           <div class="pointer-events-none absolute inset-0 opacity-10">
             <svg class="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -268,32 +289,54 @@ const backgroundStyle = computed(() => {
             </div>
           </div>
 
-          <h1 class="mb-3 text-3xl font-extrabold tracking-tight">
-            <span class="bg-gradient-to-r from-white via-blue-200 to-white bg-clip-text text-transparent animate-pulse decoration-clone drop-shadow-sm">
+          <h1 class="mb-3 text-3xl font-extrabold tracking-tight drop-shadow-lg">
+            <span class="bg-gradient-to-r from-white via-white/90 to-white/70 bg-clip-text text-transparent animate-pulse decoration-clone">
               御农·QQ 农场智能助手
             </span>
           </h1>
-          <p class="mb-8 text-blue-100 font-medium">
+          <p class="mb-8 text-white/90 font-medium drop-shadow-md tracking-wide">
             精简化、自动化的多账号管理助手
           </p>
 
           <div class="hidden w-full px-4 lg:grid lg:grid-cols-2 lg:gap-3">
             <div class="group flex flex-col items-center justify-center gap-2 border border-white/10 rounded-2xl bg-white/10 p-4 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1.5 hover:scale-105 hover:bg-white/20 hover:shadow-xl hover:shadow-white/10 cursor-default">
-              <div class="i-carbon-flash text-2xl text-blue-300 transition-colors group-hover:text-white" />
-              <span class="text-xs font-semibold tracking-wide">极速自动化</span>
+              <div class="i-carbon-flash text-2xl text-white/85 drop-shadow-md transition-all group-hover:text-white group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+              <span class="text-xs font-semibold tracking-wide drop-shadow-sm">极速自动化</span>
             </div>
             <div class="group flex flex-col items-center justify-center gap-2 border border-white/10 rounded-2xl bg-white/10 p-4 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1.5 hover:scale-105 hover:bg-white/20 hover:shadow-xl hover:shadow-white/10 cursor-default">
-              <div class="i-carbon-security text-2xl text-blue-300 transition-colors group-hover:text-white" />
-              <span class="text-xs font-semibold tracking-wide">租户级防封隔离</span>
+              <div class="i-carbon-security text-2xl text-white/85 drop-shadow-md transition-all group-hover:text-white group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+              <span class="text-xs font-semibold tracking-wide drop-shadow-sm">租户级防封隔离</span>
             </div>
             <div class="group flex flex-col items-center justify-center gap-2 border border-white/10 rounded-2xl bg-white/10 p-4 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1.5 hover:scale-105 hover:bg-white/20 hover:shadow-xl hover:shadow-white/10 cursor-default">
-              <div class="i-carbon-bot text-2xl text-blue-300 transition-colors group-hover:text-white" />
-              <span class="text-xs font-semibold tracking-wide">无感智能验证</span>
+              <div class="i-carbon-bot text-2xl text-white/85 drop-shadow-md transition-all group-hover:text-white group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+              <span class="text-xs font-semibold tracking-wide drop-shadow-sm">无感智能验证</span>
             </div>
             <div class="group flex flex-col items-center justify-center gap-2 border border-white/10 rounded-2xl bg-white/10 p-4 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1.5 hover:scale-105 hover:bg-white/20 hover:shadow-xl hover:shadow-white/10 cursor-default">
-              <div class="i-carbon-rocket text-2xl text-blue-300 transition-colors group-hover:text-white" />
-              <span class="text-xs font-semibold tracking-wide">多核并发引擎</span>
+              <div class="i-carbon-rocket text-2xl text-white/85 drop-shadow-md transition-all group-hover:text-white group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+              <span class="text-xs font-semibold tracking-wide drop-shadow-sm">多核并发引擎</span>
             </div>
+          </div>
+
+          <!-- 社区互动卡片 -->
+          <div class="hidden w-full mt-5 px-4 lg:grid lg:grid-cols-2 lg:gap-3">
+            <a
+              href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=227916149"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group flex items-center justify-center gap-2 border border-white/15 rounded-2xl bg-white/10 px-3 py-3 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1 hover:scale-105 hover:bg-white/25 hover:shadow-xl hover:shadow-white/10 no-underline text-white shadow-inner"
+            >
+              <div class="i-carbon-chat text-lg text-white/90 drop-shadow-sm transition-all group-hover:text-white group-hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+              <span class="text-xs font-semibold tracking-wide drop-shadow-sm">加入技术QQ群</span>
+            </a>
+            <a
+              href="https://github.com/smdk000/qq-farm-bot-ui"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group flex items-center justify-center gap-2 border border-white/15 rounded-2xl bg-white/10 px-3 py-3 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-1 hover:scale-105 hover:bg-white/25 hover:shadow-xl hover:shadow-white/10 no-underline text-white shadow-inner"
+            >
+              <div class="i-carbon-star text-lg text-yellow-300 drop-shadow-md transition-all group-hover:text-yellow-200 group-hover:drop-shadow-[0_0_8px_rgba(253,224,71,0.8)]" />
+              <span class="text-xs font-semibold tracking-wide drop-shadow-sm">给作者点赞 ⭐</span>
+            </a>
           </div>
         </div>
 
@@ -420,25 +463,48 @@ const backgroundStyle = computed(() => {
         </div>
       </div>
 
-      <div class="mb-4 mt-10 px-4 text-center">
-        <p class="glass-text-main text-base font-bold tracking-wide drop-shadow-sm transition-colors duration-300">
-          © 2026 🌌 御农 System | 架构与开发：
-          <span class="group relative cursor-pointer text-blue-600 dark:text-blue-400">
-            smdk000
-            <span class="absolute left-0 h-0.5 w-0 bg-blue-500 transition-all -bottom-1 group-hover:w-full" />
-          </span>
-          <span class="mx-1">|</span>
-          合作QQ群：
-          <a href="tencent://message/?uin=227916149&Site=&Menu=yes" class="text-blue-500 transition-colors dark:text-blue-400 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-            227916149
-          </a>
-        </p>
+      <div class="mb-4 mt-6 px-4 text-center z-20 relative">
+        <div class="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-full bg-white/40 dark:bg-black/40 backdrop-blur-md border border-white/30 dark:border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)] transition-all hover:bg-white/60 dark:hover:bg-black/60">
+          <p class="glass-text-main text-xs font-bold tracking-wide drop-shadow-sm flex items-center gap-1">
+            © 2026 🌌 御农 System <span class="mx-1.5 opacity-30">|</span> 架构与开发:
+            <span class="group relative cursor-pointer text-primary-600 dark:text-primary-400 font-black ml-1">
+              smdk000
+              <span class="absolute left-0 h-0.5 w-0 bg-primary-500 transition-all -bottom-1 group-hover:w-full" />
+            </span>
+            <span class="mx-1.5 opacity-30">|</span>
+            合作QQ群:
+            <a href="tencent://message/?uin=227916149&Site=&Menu=yes" class="text-primary-600 transition-colors dark:text-primary-400 hover:text-primary-700 hover:underline dark:hover:text-primary-300 font-black ml-1">
+              227916149
+            </a>
+          </p>
+        </div>
       </div>
     </div>
+
+    <!-- 免责声明拦截弹窗 -->
+    <DisclaimerModal 
+      :show="showDisclaimer"
+      @agree="onDisclaimerAgree"
+      @decline="onDisclaimerDecline"
+    />
   </div>
 </template>
 
 <style scoped>
+/* 左侧品牌面板：使用 primary CSS 变量实现主题联动 + 透明度 */
+.login-brand-panel {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--color-primary-700) / 0.92) 0%,
+    rgb(var(--color-primary-600) / 0.88) 40%,
+    rgb(var(--color-primary-500) / 0.82) 100%
+  );
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: background 0.8s ease;
+  box-shadow: inset 1px 1px 0 0 rgba(255, 255, 255, 0.2);
+}
+
 @keyframes shake {
   0%,
   100% {

@@ -9,8 +9,10 @@ const USERS_FILE = getDataFile('users.json');
 const CARDS_FILE = getDataFile('cards.json');
 const TRIAL_IP_FILE = getDataFile('trial-ip-history.json');
 
+const security = require('../services/security');
+
 const hashPassword = (password) => {
-    return crypto.createHash('sha256').update(password).digest('hex');
+    return security.hashPassword(password);
 };
 
 const generateCardCode = () => {
@@ -264,11 +266,18 @@ function validateUser(username, password) {
     loadUsers();
     const user = users.find(u => u.username === username);
     if (!user) return null;
-    if (user.password !== hashPassword(password)) return null;
+
+    const verify = security.verifyPassword(password, user.password);
+    if (!verify.valid) return null;
+
+    if (verify.needsMigration) {
+        user.password = security.hashPassword(password);
+        saveUsers();
+        console.log('[验证用户] 密码已自动迁移为 PBKDF2 格式:', username);
+    }
 
     console.log('[验证用户]', username, '- Card 状态:', user.card ? JSON.stringify(user.card) : '无卡密');
 
-    // 管理员不受卡密限制
     if (user.role === 'admin') {
         return {
             username: user.username,
@@ -277,7 +286,6 @@ function validateUser(username, password) {
         };
     }
 
-    // 检查用户状态
     if (user.card) {
         if (user.card.enabled === false) {
             return { ...user, error: '账号已被封禁' };
@@ -536,13 +544,17 @@ function changePassword(username, oldPassword, newPassword) {
         return { ok: false, error: '用户不存在' };
     }
 
-    // 验证旧密码
-    if (user.password !== hashPassword(oldPassword)) {
+    const verify = security.verifyPassword(oldPassword, user.password);
+    if (!verify.valid) {
         return { ok: false, error: '旧密码错误' };
     }
 
-    // 更新密码
-    user.password = hashPassword(newPassword);
+    const strength = security.checkPasswordStrength(newPassword);
+    if (!strength.strong) {
+        return { ok: false, error: strength.errors.join('；') };
+    }
+
+    user.password = security.hashPassword(newPassword);
     user.plainPassword = newPassword;
     saveUsers();
 

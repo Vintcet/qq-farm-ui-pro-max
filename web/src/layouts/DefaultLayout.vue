@@ -4,12 +4,14 @@ import { ref } from 'vue'
 import NotificationBell from '@/components/NotificationBell.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import ThemeSettingDrawer from '@/components/ThemeSettingDrawer.vue'
+import LeaderboardModal from '@/components/LeaderboardModal.vue'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
 const { sidebarOpen } = storeToRefs(appStore)
 
 const showThemeDrawer = ref(false)
+const showLeaderboard = ref(false)
 </script>
 
 <template>
@@ -43,6 +45,13 @@ const showThemeDrawer = ref(false)
       <div class="relative flex flex-1 flex-col overflow-hidden">
         <!-- 浮动操作区域 (配置与通知) -->
         <div class="absolute right-4 top-4 z-40 flex items-center gap-3">
+          <button
+            class="glass-panel h-10 w-10 flex items-center justify-center border rounded-full text-amber-500 shadow-md transition-all duration-300 hover:rotate-12 hover:scale-110 dark:text-amber-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 dark:focus:ring-offset-gray-900 bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200/50 dark:from-amber-900/40 dark:to-orange-900/40 dark:border-amber-700/50"
+            title="平台排行榜"
+            @click="showLeaderboard = true"
+          >
+            <div class="i-carbon-trophy text-xl" />
+          </button>
           <NotificationBell />
           <button
             class="glass-panel h-10 w-10 flex items-center justify-center border rounded-full text-gray-600 shadow-md transition-all duration-300 hover:rotate-90 dark:text-gray-300 hover:text-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary dark:focus:ring-offset-gray-900"
@@ -56,7 +65,10 @@ const showThemeDrawer = ref(false)
         <div class="custom-scrollbar mt-12 flex flex-1 flex-col overflow-y-auto p-2 md:mt-0 md:p-6 sm:p-4">
           <RouterView v-slot="{ Component, route }">
             <Transition name="slide-fade" mode="out-in">
-              <component :is="Component" :key="route.path" />
+              <component v-if="Component" :is="Component" :key="route.fullPath" />
+              <div v-else :key="`loading-${route.fullPath}`" class="flex flex-1 items-center justify-center py-20 text-gray-400">
+                <div class="i-svg-spinners-ring-resize text-3xl" />
+              </div>
             </Transition>
           </RouterView>
         </div>
@@ -65,6 +77,9 @@ const showThemeDrawer = ref(false)
 
     <!-- 主题设置抽屉 -->
     <ThemeSettingDrawer :show="showThemeDrawer" @close="showThemeDrawer = false" />
+
+    <!-- 全平台账号排行榜弹窗 -->
+    <LeaderboardModal :show="showLeaderboard" @close="showLeaderboard = false" />
   </div>
 </template>
 

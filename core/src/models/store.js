@@ -52,6 +52,37 @@ const DEFAULT_THIRD_PARTY_API_CONFIG = {
     wxAppId: '',
 };
 
+// 系统级时间参数默认值（全局生效，非账号级）
+const DEFAULT_TIMING_CONFIG = {
+    heartbeatInterval: 25000,       // 心跳间隔(ms)，保持 WebSocket 连接活跃
+    rateLimitIntervalMs: 334,       // API 限流最小间隔(ms)，~3QPS
+    ghostingProbability: 0.02,      // Ghosting 打盹触发概率 (0~1)
+    ghostingCooldownMin: 240,       // 两次打盹之间最小冷却期(分钟)
+    ghostingMinMin: 30,             // 最短打盹时长(分钟)
+    ghostingMaxMin: 90,             // 最长打盹时长(分钟)
+    inviteRequestDelay: 2000,       // 邀请请求间隔(ms)
+};
+
+// 账号模式预设常量 —— 各模式下覆写的自动化开关
+const ACCOUNT_MODE_PRESETS = {
+    main: {
+        label: '大号模式',
+        automation: { friend_steal: true, friend_bad: false, friend_help: true },
+        harvestDelay: null, // 无延迟
+    },
+    alt: {
+        label: '小号模式',
+        automation: { friend_steal: false, friend_bad: false, friend_help: false },
+        harvestDelay: { min: 180, max: 300 }, // 默认 3~5 分钟
+    },
+    safe: {
+        label: '风险规避模式',
+        automation: { friend_steal: true, friend_bad: false, friend_help: true },
+        harvestDelay: null,
+    },
+};
+const VALID_ACCOUNT_MODES = new Set(Object.keys(ACCOUNT_MODE_PRESETS));
+
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
@@ -74,6 +105,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
         open_server_gift: true,
         sell: true,
         friend_auto_accept: false, // 自动同意好友开关
+        friend_three_phase: false, // 三阶段巡查模式(扫描→偷菜→帮助)
+        auto_blacklist_banned: true, // 被封禁好友自动加黑
         fertilizer_60s_anti_steal: false, // 60秒防偷开关
         fertilizer: 'none',
     },
@@ -129,6 +162,13 @@ const DEFAULT_ACCOUNT_CONFIG = {
             nodes: []
         }
     },
+    // 账号模式：大号(main)/小号(alt)/风险规避(safe)
+    accountMode: 'main',
+    // 小号模式收获延迟配置（秒）
+    harvestDelay: {
+        min: 180,
+        max: 300,
+    },
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
 
@@ -152,6 +192,7 @@ const globalConfig = {
     adminPasswordHash: '',
     trialCardConfig: { ...DEFAULT_TRIAL_CARD_CONFIG },
     thirdPartyApi: { ...DEFAULT_THIRD_PARTY_API_CONFIG },
+    timingConfig: { ...DEFAULT_TIMING_CONFIG },
 };
 
 function normalizeOfflineReminder(input) {
@@ -271,6 +312,11 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
+        accountMode: VALID_ACCOUNT_MODES.has(String(base.accountMode || '')) ? String(base.accountMode) : 'main',
+        harvestDelay: {
+            min: Math.max(0, Number.parseInt((base.harvestDelay && base.harvestDelay.min), 10) || 180),
+            max: Math.max(0, Number.parseInt((base.harvestDelay && base.harvestDelay.max), 10) || 300),
+        },
     };
 }
 
@@ -381,6 +427,22 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
         }
         if (cfg.workflowConfig.friend.minInterval > cfg.workflowConfig.friend.maxInterval) {
             [cfg.workflowConfig.friend.minInterval, cfg.workflowConfig.friend.maxInterval] = [cfg.workflowConfig.friend.maxInterval, cfg.workflowConfig.friend.minInterval];
+        }
+    }
+
+    // 账号模式
+    if (src.accountMode !== undefined) {
+        cfg.accountMode = VALID_ACCOUNT_MODES.has(String(src.accountMode)) ? String(src.accountMode) : cfg.accountMode;
+    }
+
+    // 收获延迟
+    if (src.harvestDelay && typeof src.harvestDelay === 'object') {
+        cfg.harvestDelay = {
+            min: src.harvestDelay.min !== undefined ? Math.max(0, Number.parseInt(src.harvestDelay.min, 10) || 0) : cfg.harvestDelay.min,
+            max: src.harvestDelay.max !== undefined ? Math.max(0, Number.parseInt(src.harvestDelay.max, 10) || 0) : cfg.harvestDelay.max,
+        };
+        if (cfg.harvestDelay.min > cfg.harvestDelay.max) {
+            [cfg.harvestDelay.min, cfg.harvestDelay.max] = [cfg.harvestDelay.max, cfg.harvestDelay.min];
         }
     }
 
@@ -587,6 +649,8 @@ function loadGlobalConfig() {
             globalConfig.trialCardConfig = normalizeTrialCardConfig(data.trialCardConfig);
             // 加载第三方 API 配置
             globalConfig.thirdPartyApi = normalizeThirdPartyApiConfig(data.thirdPartyApi);
+            // 加载系统级时间参数配置
+            globalConfig.timingConfig = normalizeTimingConfig(data.timingConfig);
 
             // 如果从旧格式迁移了数据，重新写入 store.json（不含 accountConfigs 以减小体积）
             if (migratedFromOld) {
@@ -620,6 +684,9 @@ function sanitizeGlobalConfigBeforeSave() {
 
     // 净化第三方 API 配置
     globalConfig.thirdPartyApi = normalizeThirdPartyApiConfig(globalConfig.thirdPartyApi);
+
+    // 净化系统级时间参数配置
+    globalConfig.timingConfig = normalizeTimingConfig(globalConfig.timingConfig);
 }
 
 let saveTimeout = null;
@@ -662,6 +729,7 @@ function saveGlobalConfigImmediate() {
             adminPasswordHash: globalConfig.adminPasswordHash,
             trialCardConfig: globalConfig.trialCardConfig,
             thirdPartyApi: globalConfig.thirdPartyApi,
+            timingConfig: globalConfig.timingConfig,
         };
         const oldJson = readTextFile(STORE_FILE, '');
         const newJson = JSON.stringify(globalOnly, null, 2);
@@ -688,7 +756,8 @@ function getAdminPasswordHash() {
 
 function setAdminPasswordHash(hash) {
     globalConfig.adminPasswordHash = String(hash || '');
-    saveGlobalConfig();
+    // 密码变更需立即持久化，避免防抖延迟导致保存无效
+    saveGlobalConfigImmediate();
     return globalConfig.adminPasswordHash;
 }
 
@@ -1101,6 +1170,42 @@ function setThirdPartyApiConfig(cfg) {
     return getThirdPartyApiConfig();
 }
 
+// ============ 系统级时间参数配置 ============
+
+/**
+ * 规范化系统级时间参数配置
+ * @param {object} input - 输入配置
+ * @returns {object} 规范化后的配置
+ */
+function normalizeTimingConfig(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const clamp = (v, min, max, def) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return def;
+        return Math.max(min, Math.min(max, n));
+    };
+    return {
+        heartbeatInterval: clamp(src.heartbeatInterval, 10000, 120000, DEFAULT_TIMING_CONFIG.heartbeatInterval),
+        rateLimitIntervalMs: clamp(src.rateLimitIntervalMs, 100, 2000, DEFAULT_TIMING_CONFIG.rateLimitIntervalMs),
+        ghostingProbability: clamp(src.ghostingProbability, 0, 0.5, DEFAULT_TIMING_CONFIG.ghostingProbability),
+        ghostingCooldownMin: clamp(src.ghostingCooldownMin, 30, 1440, DEFAULT_TIMING_CONFIG.ghostingCooldownMin),
+        ghostingMinMin: clamp(src.ghostingMinMin, 5, 360, DEFAULT_TIMING_CONFIG.ghostingMinMin),
+        ghostingMaxMin: clamp(src.ghostingMaxMin, 10, 720, DEFAULT_TIMING_CONFIG.ghostingMaxMin),
+        inviteRequestDelay: clamp(src.inviteRequestDelay, 500, 10000, DEFAULT_TIMING_CONFIG.inviteRequestDelay),
+    };
+}
+
+function getTimingConfig() {
+    return normalizeTimingConfig(globalConfig.timingConfig);
+}
+
+function setTimingConfig(cfg) {
+    const current = normalizeTimingConfig(globalConfig.timingConfig);
+    globalConfig.timingConfig = normalizeTimingConfig({ ...current, ...(cfg || {}) });
+    saveGlobalConfig();
+    return getTimingConfig();
+}
+
 // ============ 账号管理 (对接 MySQL AccountRepository) ============
 const accountRepository = require('../repositories/account-repository');
 
@@ -1115,6 +1220,7 @@ async function getAccounts() {
         uin: r.uin ? String(r.uin) : '',
         qq: r.uin ? String(r.uin) : '',
         nick: r.nick || '',
+        avatar: r.avatar || '',
         running: !!r.running,
         status: r.status,
         api_error_count: r.api_error_count,
@@ -1192,7 +1298,7 @@ async function getAccountFull(accountId) {
     };
 }
 
-const DB_FIELDS = ['id', 'uin', 'qq', 'nick', 'name', 'platform', 'running', 'status', 'api_error_count', 'username', 'createdAt', 'updatedAt'];
+const DB_FIELDS = ['id', 'uin', 'qq', 'nick', 'name', 'platform', 'running', 'status', 'api_error_count', 'username', 'avatar', 'createdAt', 'updatedAt'];
 function extractAuthData(acc) {
     const auth = {};
     for (const key in acc) {
@@ -1215,8 +1321,8 @@ async function addOrUpdateAccount(acc) {
             const mergedAuth = { ...authData, ...newAuthData };
             const pool = require('../services/mysql-db').getPool();
 
-            await pool.execute('UPDATE accounts SET nick = ?, username = ?, auth_data = ? WHERE id = ?',
-                [acc.nick || existing.nick || '', acc.username || existing.username || '', JSON.stringify(mergedAuth), acc.id]);
+            await pool.execute('UPDATE accounts SET nick = ?, username = ?, avatar = ?, auth_data = ? WHERE id = ?',
+                [acc.nick || existing.nick || '', acc.username || existing.username || '', acc.avatar ?? existing.avatar ?? null, JSON.stringify(mergedAuth), acc.id]);
         }
     } else {
         // 创建逻辑
@@ -1226,6 +1332,7 @@ async function addOrUpdateAccount(acc) {
             name: acc.name || '新账号',
             platform: acc.platform || 'qq',
             username: acc.username || '',
+            avatar: acc.avatar || null,
             auth_data: extractAuthData(acc)
         });
         touchedAccountId = String(newAcc.id);
@@ -1247,6 +1354,61 @@ async function deleteAccount(id, options = {}) {
     }
 
     return await getAccounts();
+}
+
+/**
+ * 切换账号模式 — 根据预设覆写自动化开关和收获延迟
+ * @param {string} accountId - 账号ID
+ * @param {string} mode - 'main' | 'alt' | 'safe'
+ * @returns {object} 更新后的配置快照
+ */
+function applyAccountMode(accountId, mode) {
+    if (!VALID_ACCOUNT_MODES.has(mode)) {
+        throw new Error(`无效的账号模式: ${mode}`);
+    }
+    const preset = ACCOUNT_MODE_PRESETS[mode];
+    const current = getAccountConfigSnapshot(accountId);
+
+    // 覆写自动化开关
+    if (preset.automation) {
+        for (const [key, val] of Object.entries(preset.automation)) {
+            if (current.automation[key] !== undefined) {
+                current.automation[key] = val;
+            }
+        }
+    }
+
+    // 覆写收获延迟
+    if (preset.harvestDelay) {
+        current.harvestDelay = { ...preset.harvestDelay };
+    }
+
+    // 设置模式标识
+    current.accountMode = mode;
+
+    return setAccountConfigSnapshot(accountId, current, true);
+}
+
+/**
+ * 大号唯一性约束 — 按 username 隔离
+ * 设置新大号前，将同用户下旧大号降级为小号
+ * @param {string} newMainId - 新大号的账号 ID
+ * @param {string} username - 登录用户名
+ * @returns {Array} 被降级的旧大号信息列表
+ */
+async function ensureMainAccountUnique(newMainId, username) {
+    const downgraded = [];
+    const accounts = await accountRepository.findByUsername(username);
+    for (const acc of accounts) {
+        const accId = String(acc.id);
+        if (accId === String(newMainId)) continue;
+        const cfg = getAccountConfigSnapshot(accId);
+        if (cfg.accountMode === 'main') {
+            applyAccountMode(accId, 'alt');
+            downgraded.push({ id: accId, uin: acc.uin, name: acc.name || acc.nick || accId });
+        }
+    }
+    return downgraded;
 }
 
 module.exports = {
@@ -1287,4 +1449,13 @@ module.exports = {
     recordFertilizerBought,
     getSuspendUntil,
     recordSuspendUntil,
+    getTimingConfig,
+    setTimingConfig,
+    DEFAULT_TIMING_CONFIG,
+    // 账号模式
+    ACCOUNT_MODE_PRESETS,
+    applyAccountMode,
+    ensureMainAccountUnique,
+    getAccountConfigSnapshot,
+    setAccountConfigSnapshot,
 };

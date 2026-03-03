@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Plan: System Robustness & Performance Enhancement</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            fontFamily: 'Inter, system-ui, sans-serif'
+        });
+    </script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #e2e8f0;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --radius: 12px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 40px 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #f8fafc;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            text-align: center;
+            border: none;
+            margin-bottom: 40px;
+        }
+
+        .section {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: var(--radius);
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .badge.p0 {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .badge.p1 {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .badge.p2 {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--primary);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            color: #94a3b8;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 8px;
+            color: #cbd5e1;
+        }
+
+        .mermaid-container {
+            background: #0f172add;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow-x: auto;
+            text-align: center;
+            border: 1px solid #1e293b;
+        }
+
+        code {
+            background: #0f172a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #38bdf8;
+            border: 1px solid #1e293b;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid var(--danger);
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🚀 系统健壮性与性能优化计划 (V4.1)</h1>
+
+    <div class="section">
+        <h2>1. ⏱️ 增强时间参数库：风险阻断与安全边界 (P0)</h2>
+        <p><span class="badge p0">防封禁安全</span> <strong>当前隐患</strong>：全局时间参数暴漏给前端后，普通用户可能出于“提速”的本能，将 `farmCycleInterval`
+            (循环检测) 或 `friendPatrolInterval` (好友巡查) 设置到极端危险值（如1秒），高频恶意轮询将直接触发腾讯接口的 `1002003` 防风控拦截，导致账号大规模被办。</p>
+
+        <h3>应对策略 (Mitigation Strategy)</h3>
+        <ul>
+            <li><strong>后端校验硬保底 (Runtime Guard)</strong>：修改 `core/src/controllers/admin.js` 中的
+                <code>/api/admin/time-parameters</code> 保存接口，强制限定最小安全下限（例如：<code>farmCycleInterval</code> 必须 &ge;
+                <code>30000ms</code>）。</li>
+            <li><strong>权限分发控制 (Role-Based Ranges)</strong>：仅对 <code>role === 'admin'</code> 的所有者开放完全自定义权限（不设最低限或只设极低的
+                100ms 兜底），而对 <code>user</code> 角色则实行严苛的安全白名单管控。</li>
+            <li><strong>前端限制交互 (UI Safeguards)</strong>：将 `Settings.vue` 中涉及请求频率的参数从无极 `<input type="number">` 修改为更受控的
+                <code>&lt;BaseSlider&gt;</code>，或加上带有显著警示颜色的输入验证反馈。</li>
+        </ul>
+
+        <div class="mermaid-container">
+            <div class="mermaid">
+                flowchart TD
+                A[用户在界面输入时间值] --> B{输入类型?}
+                B -->|极低频率请求| C[前端阻止提交，红框报警]
+                B -->|合法合规请求| D[后端 /api/admin/time-parameters]
+                D --> E{当前账号权限?}
+                E -->|Admin| F[宽容落库放行]
+                E -->|User| G[应用防风控硬核基线对比]
+                G --> H{判定是否突破阈值?}
+                H -->|通过| I[写入配置并生效]
+                H -->|越界| J[向前端下发警告: 此频率过高有封号风险]
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>2. 📉 Dashboard 日志加载性能：虚拟化与削峰 (P1)</h2>
+        <p><span class="badge p1">前端性能优化</span> <strong>当前隐患</strong>：由于 WebSocket 会在上游连接瞬间下发 <code>limit: 100</code>
+            的多模块全量日志。若短时间内进行重连（尤其是开启了密集型日志模式），几百上千条 DOM 节点将使 Vue 进行巨量渲染计算。随着页面常驻挂机，累积的内存压力足以使得含有毛玻璃动效的 Dashboard 面页掉帧卡顿。
+        </p>
+
+        <h3>应对策略 (Mitigation Strategy)</h3>
+        <ul>
+            <li><strong>初始缓存减压 (Snapshot Trimming)</strong>：在 `admin.js` 中将初始 WebSocket 连接快照推送的 <code>limit: 100</code>
+                降低为最精华的 <code>30-50</code> 条，保障首屏秒开。</li>
+            <li><strong>淘汰算法前置 (Deduplication & Capping)</strong>：优化 `status.ts` 下针对于 `accountLogs` 缓存池的 LRU
+                管理。目前虽然能清点老旧数据，但当数据峰值爆发时，仍有高消耗。</li>
+            <li><strong>DOM虚拟滚动降级 (DOM Recycling)</strong>：将原生的 <code>v-for</code> 日志流标签层级重构，移除不必要的响应式追踪（使用
+                `Object.freeze` 脱库），或者评估引入 `vue-virtual-scroller` 的可行性，维持界面渲染永远仅对齐可视窗口范围内的数十行节点。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>3. 🧩 防过渡组件奔溃：Teleport 隔离法 (P2)</h2>
+        <p><span class="badge p2">工程健壮性</span> <strong>当前隐患</strong>：如之前所述，Vue 3 的 <code>&lt;Transition&gt;</code>
+            容器极度娇贵，任何试图往根组件（比如 `Dashboard.vue` 的底层）追加功能弹窗、提示气泡（Siblings Fragment）的修改，都会引发路由卡死白屏风暴。</p>
+
+        <h3>应对策略 (Mitigation Strategy)</h3>
+        <ul>
+            <li><strong>封装全局
+                    Teleport</strong>：制定开发规范，未来所有属于系统悬浮层级别的组件（<code>&lt;ConfirmModal&gt;</code>、<code>&lt;Toast&gt;</code>
+                等），内部的挂载模板均由 <code>&lt;Teleport to="body"&gt;</code> 包裹。</li>
+            <li><strong>DOM结构防呆</strong>：一旦实施 <code>Teleport</code>，不论开发者误将弹窗代码插在 <code>vue</code>
+                的哪个层级（包括写成平行兄弟节点），在真正渲染时，Vue 都会把他们强行摘取放置在 <code>&lt;body&gt;</code> 的末尾，彻底斩断对路由页面内“单根结构”的威胁。</li>
+            <li><strong>深度审计与规整</strong>：审查 `Friends.vue`、`Accounts.vue` 以及 `Workflow.vue`
+                等现行文件，将所有的弹出蒙层统一替换，避免下次接手重构时再次“踩坑”。</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>4. 📅 执行路线图 (Execution Roadmap)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>阶段</th>
+                    <th>动作包</th>
+                    <th>操作模块</th>
+                    <th>影响面</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Phase 1</strong></td>
+                    <td>后端安全阈值注入 & 前端拦截警示UI</td>
+                    <td><code>src/controllers/admin.js</code><br><code>src/views/Settings.vue</code></td>
+                    <td>时间设置保存的上下边界</td>
+                </tr>
+                <tr>
+                    <td><strong>Phase 2</strong></td>
+                    <td>组件 Teleport 规范替换审计与重构</td>
+                    <td><code>src/components/ConfirmModal.vue</code><br>及附属 7 个路由父组件</td>
+                    <td>全局弹窗的 DOM 渲染拓扑</td>
+                </tr>
+                <tr>
+                    <td><strong>Phase 3</strong></td>
+                    <td>Dashboard 日志加载峰值削减与 DOM 冻结</td>
+                    <td><code>core/src/controllers/admin.js</code><br><code>web/src/stores/status.ts</code></td>
+                    <td>长连状态管理、内存占用</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+</body>
+
+</html>

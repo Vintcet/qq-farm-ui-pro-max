@@ -80,11 +80,19 @@ function sendMsg(serviceName, methodName, bodyBytes, callback) {
 // ============ 令牌桶限流器 (Token Bucket Rate Limiter) ============
 // 强制所有异步业务请求按固定速率(3 QPS = 每帧间隔 333ms)依次发出
 // 目的: 防止触发腾讯服务器的高频 QPS 风控检测
-const RATE_LIMIT_INTERVAL_MS = 334; // 每帧最小间隔(ms)，3QPS ≈ 333.3ms，取整 334
+// 从全局时间参数配置动态读取，管理员可通过面板调整
+function getRateLimitIntervalMs() {
+    try { return store.getTimingConfig().rateLimitIntervalMs || 334; } catch { return 334; }
+}
+const RATE_LIMIT_INTERVAL_MS = 334; // 仅作为首次启动的 fallback 默认值
 let lastSendTimestamp = 0;          // 上次实际发送时间戳
 const normalQueue = [];             // 常规排队中的发送任务
 const urgentQueue = [];             // 高优紧急通道任务（FIFO有序）
 let drainRunning = false;           // 队列消费循环是否运行中
+
+// 防饿死机制状态
+const MAX_CONSECUTIVE_URGENT = 10;  // 连续处理紧急请求的上限，超过后强制释放一个普通请求
+let urgentConsecutiveCount = 0;     // 当前已连续处理的紧急请求数
 
 /**
  * 将一个发送任务推入令牌桶队列尾部（常规优先级），按 FIFO 顺序限速消费
@@ -117,8 +125,12 @@ async function drainQueue() {
         }
         const now = Date.now();
         const elapsed = now - lastSendTimestamp;
-        if (elapsed < RATE_LIMIT_INTERVAL_MS) {
-            await new Promise(r => setTimeout(r, RATE_LIMIT_INTERVAL_MS - elapsed));
+        // Jitter Defense: ±20% 随机抖动，模糊匀速行为指纹
+        // 防止腾讯行为分析系统因"过匀速"判定为机器人
+        const currentRateLimit = getRateLimitIntervalMs();
+        const jitteredInterval = currentRateLimit * (0.8 + Math.random() * 0.4);
+        if (elapsed < jitteredInterval) {
+            await new Promise(r => setTimeout(r, jitteredInterval - elapsed));
         }
 
         // 优先消费紧急队列，但防止完全饿死普通队列 (Anti-Starvation)
@@ -567,9 +579,12 @@ function connect(code, openId, onLoginSuccess) {
     savedLoginCallback = onLoginSuccess;
     if (code) savedCode = code;
     if (openId) savedOpenId = openId;
-    const url = `${CONFIG.serverUrl}?platform=${CONFIG.platform}&os=${CONFIG.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=${savedOpenId || ''}`;
 
-    console.log(`[DEBUG WS CONNECT] platform=${CONFIG.platform}, code=${savedCode}, openID=${savedOpenId || ''}, url=${url}`);
+    // 抹平非标准平台标识符，防止腾讯游戏服 400 Bad Request
+    const wsPlatform = (CONFIG.platform === 'wx_ipad' || CONFIG.platform === 'wx_car') ? 'wx' : CONFIG.platform;
+    const url = `${CONFIG.serverUrl}?platform=${wsPlatform}&os=${CONFIG.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=${savedOpenId || ''}`;
+
+    console.log(`[DEBUG WS CONNECT] platform=${wsPlatform}, code=${savedCode}, openID=${savedOpenId || ''}, url=${url}`);
 
     ws = new WebSocket(url, {
         headers: {

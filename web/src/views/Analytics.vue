@@ -105,8 +105,8 @@ function formatGrowTime(seconds: any) {
   <div class="p-4">
     <div class="mb-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
       <h2 class="flex items-center gap-2 text-2xl font-bold">
-        <div class="i-carbon-chart-line" />
-        数据分析
+        <div class="i-carbon-catalog" />
+        作物图鉴
       </h2>
 
       <div class="flex items-center gap-2">
@@ -131,144 +131,72 @@ function formatGrowTime(seconds: any) {
       暂无数据
     </div>
 
-    <div v-else class="space-y-4">
-      <!-- Mobile Card View -->
-      <div class="block sm:hidden space-y-4">
-        <div v-for="(item, idx) in list" :key="idx" class="glass-panel border border-white/20 rounded-xl p-4 shadow-sm dark:border-white/10">
-          <div class="mb-3 flex items-start gap-3">
-            <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-white/20 rounded-lg bg-primary-500/10 dark:border-white/10 dark:bg-black/20">
-              <img
-                v-if="item.image && !imageErrors[item.seedId]"
-                :src="item.image"
-                class="h-10 w-10 object-contain drop-shadow-md"
-                loading="lazy"
-                @error="imageErrors[item.seedId] = true"
-              >
-              <div v-else class="i-carbon-sprout text-2xl text-primary-500/50" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center justify-between">
-                <div class="glass-text-main truncate font-bold">
-                  {{ item.name }}
-                </div>
-                <div class="glass-text-muted text-xs">
-                  ID:{{ item.seedId }}
-                </div>
+    <div v-else>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div
+          v-for="(item, idx) in list"
+          :key="idx"
+          class="glass-panel group overflow-hidden rounded-xl shadow transition-all hover:-translate-y-1 hover:shadow-lg dark:hover:bg-white/5 flex flex-col"
+        >
+          <!-- 卡片内容主体: 允许点击放大或高亮交互 -->
+          <div class="p-4 cursor-pointer flex flex-col flex-1 gap-4 transition bg-transparent">
+            
+            <!-- 头部：图鉴图标 + 名称 + 核心状态 -->
+            <div class="flex flex-row items-center gap-3">
+              <!-- 作物图片 -->
+              <div class="relative h-12 w-12 flex shrink-0 items-center justify-center overflow-hidden border border-white/20 rounded-lg bg-primary-500/10 dark:border-white/10 dark:bg-black/20 group-hover:bg-primary-500/20 transition-colors">
+                <img
+                  v-if="item.image && !imageErrors[item.seedId]"
+                  :src="item.image"
+                  class="h-10 w-10 object-contain drop-shadow-sm group-hover:scale-110 transition-transform"
+                  loading="lazy"
+                  @error="imageErrors[item.seedId] = true"
+                >
+                <div v-else class="i-carbon-sprout text-2xl text-primary-500/50" />
               </div>
-              <div class="mt-1 flex items-center gap-2">
-                <span class="border border-primary-500/20 rounded bg-primary-500/10 px-1.5 py-0.5 text-xs text-primary-600 font-medium dark:text-primary-400">Lv{{ formatLv(item.level) }}</span>
-                <span class="glass-text-muted text-xs">{{ item.seasons }}季</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <div class="flex flex-col">
-              <span class="glass-text-muted mb-0.5 text-xs">时间</span>
-              <span class="glass-text-main font-medium">{{ formatGrowTime(item.growTime) }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="glass-text-muted mb-0.5 text-xs">经验/小时</span>
-              <span class="text-purple-600 font-bold dark:text-purple-400">{{ item.expPerHour }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="glass-text-muted mb-0.5 text-xs">净利润/小时</span>
-              <span class="text-amber-500 font-bold dark:text-amber-400">{{ item.profitPerHour ?? '-' }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="glass-text-muted mb-0.5 text-xs">普肥经验/小时</span>
-              <span class="text-blue-600 font-bold dark:text-blue-400">{{ item.normalFertilizerExpPerHour ?? '-' }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="glass-text-muted mb-0.5 text-xs">普肥净利润/小时</span>
-              <span class="text-primary-600 font-bold dark:text-primary-400">{{ item.normalFertilizerProfitPerHour ?? '-' }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Desktop Table View -->
-      <div class="glass-panel hidden overflow-hidden rounded-xl shadow-md sm:block">
-        <div class="custom-scrollbar overflow-x-auto">
-          <table class="w-full whitespace-nowrap text-left text-sm">
-            <thead class="glass-text-main border-b border-white/20 bg-black/5 text-xs font-bold tracking-wider uppercase dark:border-white/10 dark:bg-black/20">
-              <tr>
-                <th class="sticky left-0 z-10 border-r border-white/10 bg-transparent px-4 py-3 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] backdrop-blur-xl dark:border-white/5 dark:shadow-[1px_0_0_0_rgba(255,255,255,0.05)]">
-                  作物 (Lv)
-                </th>
-                <th class="px-4 py-3">
-                  时间
-                </th>
-                <th class="px-4 py-3 text-right">
-                  经验/时
-                </th>
-                <th class="px-4 py-3 text-right">
-                  普通肥经验/时
-                </th>
-                <th class="px-4 py-3 text-right">
-                  净利润/时
-                </th>
-                <th class="px-4 py-3 text-right">
-                  普通肥净利润/时
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-white/20 dark:divide-white/10">
-              <tr v-for="(item, idx) in list" :key="idx" class="group transition-colors hover:bg-black/5 dark:hover:bg-white/5">
-                <td class="sticky left-0 border-r border-white/10 bg-transparent px-4 py-2 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] backdrop-blur-xl transition-colors dark:border-white/5 group-hover:bg-black/5 dark:shadow-[1px_0_0_0_rgba(255,255,255,0.05)] dark:group-hover:bg-white/5">
-                  <div class="flex items-center gap-3">
-                    <div class="relative h-10 w-10 flex shrink-0 items-center justify-center overflow-hidden border border-white/20 rounded-lg bg-primary-500/10 dark:border-white/10 dark:bg-black/20">
-                      <img
-                        v-if="item.image && !imageErrors[item.seedId]"
-                        :src="item.image"
-                        class="h-8 w-8 object-contain drop-shadow-md"
-                        loading="lazy"
-                        @error="imageErrors[item.seedId] = true"
-                      >
-                      <div v-else class="i-carbon-sprout text-xl text-primary-500/50" />
-                    </div>
-                    <div>
-                      <div class="glass-text-main font-bold">
-                        {{ item.name }}
-                      </div>
-                      <div class="mt-0.5 flex items-center gap-1.5">
-                        <span class="border border-primary-500/20 rounded bg-primary-500/10 px-1.5 py-0.5 text-[10px] text-primary-600 font-medium dark:text-primary-400">Lv{{ formatLv(item.level) }}</span>
-                        <span class="glass-text-muted text-[10px]">ID:{{ item.seedId }}</span>
-                      </div>
-                    </div>
+              
+              <!-- 文本信息 -->
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between">
+                  <div class="glass-text-main truncate font-bold text-base group-hover:text-primary-500 transition-colors">
+                    {{ item.name }}
                   </div>
-                </td>
-                <td class="glass-text-main px-4 py-2">
-                  <div class="font-medium">
+                  <div class="glass-text-muted text-[10px] font-mono">
+                    ID:{{ item.seedId }}
+                  </div>
+                </div>
+                <div class="mt-1 flex flex-wrap items-center gap-2">
+                  <span class="border border-primary-500/20 rounded bg-primary-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary-600 dark:text-primary-400">Lv {{ formatLv(item.level) }}</span>
+                  <span class="border border-yellow-500/20 rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-600 dark:text-yellow-400">{{ item.seasons }}季</span>
+                  <span class="glass-text-muted text-[10px] flex items-center gap-0.5 ml-auto">
+                    <div class="i-carbon-time" />
                     {{ formatGrowTime(item.growTime) }}
-                  </div>
-                  <div class="glass-text-muted mt-0.5 text-xs">
-                    {{ item.seasons }}季
-                  </div>
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <div class="text-purple-600 font-bold dark:text-purple-400">
-                    {{ item.expPerHour }}
-                  </div>
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <div class="text-blue-600 font-bold dark:text-blue-400">
-                    {{ item.normalFertilizerExpPerHour ?? '-' }}
-                  </div>
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <div class="text-amber-500 font-bold dark:text-amber-400">
-                    {{ item.profitPerHour ?? '-' }}
-                  </div>
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <div class="text-primary-500 font-bold dark:text-primary-400">
-                    {{ item.normalFertilizerProfitPerHour ?? '-' }}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 数据列 (2x2 网格) -->
+            <div class="grid grid-cols-2 gap-3 text-sm mt-auto pt-2 border-t border-gray-200/50 dark:border-white/10">
+              <div class="flex flex-col">
+                <span class="glass-text-muted mb-0.5 text-[10px] uppercase opacity-80">经验/小时</span>
+                <span class="text-purple-600 font-bold dark:text-purple-400 leading-none">{{ item.expPerHour }}</span>
+              </div>
+              <div class="flex flex-col text-right">
+                <span class="glass-text-muted mb-0.5 text-[10px] uppercase opacity-80">净利润/小时</span>
+                <span class="text-amber-500 font-bold dark:text-amber-400 leading-none">{{ item.profitPerHour ?? '-' }}</span>
+              </div>
+              <div class="flex flex-col">
+                <span class="glass-text-muted mb-0.5 text-[10px] uppercase opacity-80">普肥经验/小时</span>
+                <span class="text-blue-600 font-bold dark:text-blue-400 leading-none">{{ item.normalFertilizerExpPerHour ?? '-' }}</span>
+              </div>
+              <div class="flex flex-col text-right">
+                <span class="glass-text-muted mb-0.5 text-[10px] uppercase opacity-80">普肥净利润/小时</span>
+                <span class="text-primary-600 font-bold dark:text-primary-400 leading-none">{{ item.normalFertilizerProfitPerHour ?? '-' }}</span>
+              </div>
+            </div>
+            
+          </div>
         </div>
       </div>
     </div>

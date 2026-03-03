@@ -104,8 +104,12 @@
 
 ## 功能特性
 
-### 多账号管理
+### 多账号与模式管理
 - 账号新增、编辑、删除、启动、停止
+- 提供三种核心运作模式：
+  - **主号模式**：享有最高优先度和全部操作权限
+  - **小号模式**：对高危操作免疫，执行自动的秒级防风控收获延迟（可自主调参）
+  - **风险规避模式**：切断高危互动并基于历史封禁日志生成一键防御黑名单罩
 - 扫码登录（支持 QQ 与 微信）与手动输入 Code
 - 账号被踢下线自动删除
 - 账号连续离线超时自动删除
@@ -128,7 +132,7 @@
 - 深色 / 浅色主题切换
 - 响应式设计，支持移动端访问
 
-![Dashboard](pic/截图1.png)
+![Dashboard](assets/screenshots/screenshot-01.png)
 
 ### 分析页
 支持按以下维度排序作物：
@@ -136,7 +140,7 @@
 - 净利润效率 / 普通肥净利润效率
 - 等级要求
 
-![分析页面](pic/截图2.png)
+![分析页面](assets/screenshots/screenshot-02.png)
 
 ### 帮助中心
 - 新手入门指南
@@ -145,7 +149,7 @@
 - 故障排查指南
 - 配置模板推荐
 
-![帮助中心](pic/截图3.png)
+![帮助中心](assets/screenshots/screenshot-03.png)
 
 ---
 
@@ -177,12 +181,18 @@
 
 **Linux/macOS:**
 ```bash
-./start.sh
+./docker/start.sh
 ```
+
+**ARM Mac 本地开发（一键编译 + 启动）：**
+```bash
+./dev.sh
+```
+脚本会自动关闭占用端口、编译前端、启动后端，适合改代码和测试。
 
 **Windows:**
 ```cmd
-start.bat
+docker\\start.bat
 ```
 
 ### 手动启动
@@ -233,7 +243,7 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 - 本机：`http://localhost:3000`
 - 局域网：`http://<你的 IP>:3000`
 
-![设置页面](pic/截图4.png)
+![设置页面](assets/screenshots/screenshot-04.png)
 
 ---
 
@@ -247,12 +257,12 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 
 **如果您的服务器是 x86_64（例如常见 Intel / AMD 云服务器）：**
 ```bash
-curl -O https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy-x86.sh && chmod +x deploy-x86.sh && ./deploy-x86.sh
+curl -O https://raw.githubusercontent.com/smdk000/qq-farm-bot-ui/main/scripts/deploy-x86.sh && chmod +x deploy-x86.sh && ./deploy-x86.sh
 ```
 
 **如果您的服务器是 ARM64（例如甲骨文 ARM，苹果 Mac，树莓派等）：**
 ```bash
-curl -O https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy-arm.sh && chmod +x deploy-arm.sh && ./deploy-arm.sh
+curl -O https://raw.githubusercontent.com/smdk000/qq-farm-bot-ui/main/scripts/deploy-arm.sh && chmod +x deploy-arm.sh && ./deploy-arm.sh
 ```
 
 ### 💡 极强健壮性：空载数据库零干预启动
@@ -273,12 +283,12 @@ curl -O https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/script
 
 ### 方法 2: Docker Compose（生产环境纯净部署）
 
-如果您属于经验丰富的开发者并希望保持环境的纯净独立掌控权：
+使用 `docker-compose.prod.yml` 可一键启动完整栈：**qq-farm-bot-ui** + **ipad860**（微信协议）+ **Redis**，端口映射 `3080 → 3000`。
 
 **1. 下载完整编排配置并生成 `.env`**
 ```bash
-curl -O https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/docker-compose.prod.yml
-curl -o .env https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/.env.example
+curl -O https://raw.githubusercontent.com/smdk000/qq-farm-bot-ui/main/docker-compose.prod.yml
+curl -o .env https://raw.githubusercontent.com/smdk000/qq-farm-bot-ui/main/.env.example
 ```
 
 **2. 定制您的服务密码（强烈防黑客推荐）**
@@ -295,27 +305,7 @@ docker-compose -f docker-compose.prod.yml ps
 docker-compose -f docker-compose.prod.yml logs -f
 ```
 
-**配置文件** (`docker-compose.prod.yml`):
-```yaml
-version: '3.8'
-
-services:
-  qq-farm-bot-ui:
-    image: smdk000/qq-farm-bot-ui:latest
-    container_name: qq-farm-bot-ui
-    restart: unless-stopped
-    ports:
-      - "3080:3000"
-    environment:
-      - ADMIN_PASSWORD=qq007qq008
-      - TZ=Asia/Shanghai
-      - NODE_ENV=production
-      - LOG_LEVEL=info
-    volumes:
-      - ./data:/app/core/data
-      - ./logs:/app/core/logs
-      - ./backup:/app/core/backup
-```
+**服务说明**：`docker-compose.prod.yml` 包含 qq-farm-bot-ui、ipad860（微信扫码登录）、Redis，Web 面板访问端口为 `3080`。
 
 ---
 
@@ -577,7 +567,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 
 ## 📚 完整文档
 
-- **GitHub 仓库**: https://github.com/smdk000/qq-farm-ui-pro-max
+- **GitHub 仓库**: https://github.com/smdk000/qq-farm-bot-ui
 - **Docker Hub**: https://hub.docker.com/r/smdk000/qq-farm-bot-ui
 - **GitHub Packages**: https://github.com/users/smdk000/packages/container/package/qq-farm-bot-ui
 - **部署指南**: [DEPLOYMENT_GUIDE_v3.6.0.md](DEPLOYMENT_GUIDE_v3.6.0.md)
@@ -590,13 +580,13 @@ Docker 会自动选择适合您系统架构的镜像版本。
 
 ### 文档资源
 
-- [README.md](https://github.com/smdk000/qq-farm-ui-pro-max) - 项目说明
+- [README.md](https://github.com/smdk000/qq-farm-bot-ui) - 项目说明
 - [DEPLOYMENT_FIX_REPORT.md](DEPLOYMENT_FIX_REPORT.md) - 部署问题修复报告
 - [DOCKER_BUILD_COMPLETE.md](DOCKER_BUILD_COMPLETE.md) - Docker 构建完成总结
 
 ### 技术支持
 
-- **GitHub Issues**: https://github.com/smdk000/qq-farm-ui-pro-max/issues
+- **GitHub Issues**: https://github.com/smdk000/qq-farm-bot-ui/issues
 - **QQ 群**: 227916149
 - **Docker Hub**: https://hub.docker.com/r/smdk000/qq-farm-bot-ui
 
@@ -607,52 +597,50 @@ Docker 会自动选择适合您系统架构的镜像版本。
 ### 登录
 支持多模式验证、Token安全保护、体验卡自助领取与一键全自动登录入驻。
 
-![登录控制台1](pic/登录1.png)
-![登录控制台2](pic/登录2.png)
-![登录控制台3](pic/登录3.png)
+![登录控制台1](assets/screenshots/login-01.png)
+![登录控制台2](assets/screenshots/login-02.png)
+![登录控制台3](assets/screenshots/login-03.png)
 
 ### 主题
 内置多种玻璃态 (Glassmorphism) 梦幻色彩主题，全面适配深浅双模与性能自适应。
 
-![主题切换1](pic/主题1.png)
-![主题切换2](pic/主题2.png)
-![主题切换3](pic/主题3.png)
-![主题切换4](pic/主题4.png)
-![主题切换5](pic/主题5.png)
-![主题切换6](pic/主题6.png)
-![主题切换7](pic/主题7.png)
-![主题切换8](pic/主题8.png)
-![主题切换9](pic/主题9.png)
-![主题切换10](pic/主题10.png)
+![主题切换1](assets/screenshots/theme-01.png)
+![主题切换2](assets/screenshots/theme-02.png)
+![主题切换3](assets/screenshots/theme-03.png)
+![主题切换4](assets/screenshots/theme-04.png)
+![主题切换5](assets/screenshots/theme-05.png)
+![主题切换6](assets/screenshots/theme-06.png)
+![主题切换7](assets/screenshots/theme-07.png)
+![主题切换8](assets/screenshots/theme-08.png)
+![主题切换9](assets/screenshots/theme-09.png)
+![主题切换10](assets/screenshots/theme-10.png)
 
 ### 功能
 全网独家挂载系统，支持好友队列并行与精准到秒的农作物防风控安全蹲守拦截。
 
-![核心功能1](pic/功能1.png)
-![核心功能2](pic/功能2.png)
-![核心功能3](pic/功能3.png)
-![核心功能4](pic/功能4.png)
-![核心功能5](pic/功能5.png)
-![核心功能6](pic/功能6.png)
-![核心功能7](pic/功能7.png)
-![核心功能8](pic/功能8.png)
-![核心功能9](pic/功能9.png)
-![核心功能10](pic/功能10.png)
-![核心功能11](pic/功能11.png)
-![核心功能12](pic/功能12.png)
-![核心功能13](pic/功能13.png)
-![核心功能14](pic/功能14.png)
-![核心功能15](pic/功能15.png)
-![核心功能16](pic/功能16.png)
-![核心功能17](pic/功能17.png)
+![核心功能1](assets/screenshots/feature-01.png)
+![核心功能2](assets/screenshots/feature-02.png)
+![核心功能3](assets/screenshots/feature-03.png)
+![核心功能4](assets/screenshots/feature-04.png)
+![核心功能5](assets/screenshots/feature-05.png)
+![核心功能6](assets/screenshots/feature-06.png)
+![核心功能7](assets/screenshots/feature-07.png)
+![核心功能8](assets/screenshots/feature-08.png)
+![核心功能9](assets/screenshots/feature-09.png)
+![核心功能10](assets/screenshots/feature-10.png)
+![核心功能11](assets/screenshots/feature-11.png)
+![核心功能12](assets/screenshots/feature-12.png)
+![核心功能13](assets/screenshots/feature-13.png)
+![核心功能14](assets/screenshots/feature-14.png)
+![核心功能15](assets/screenshots/feature-15.png)
+![核心功能16](assets/screenshots/feature-16.png)
+![核心功能17](assets/screenshots/feature-17.png)
 
 ---
 
 **维护者**: smdk000  
 **最后更新**: 2026-03-02  
 **版本**: v3.8.0
-
-## 多用户模式
 
 ## 多用户模式
 
@@ -672,7 +660,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 3. 编辑用户（修改到期时间、启用/封禁）
 4. 删除普通用户
 
-![用户管理](pic/截图5.png)
+![用户管理](assets/screenshots/screenshot-05.png)
 
 ### 普通用户操作
 
@@ -688,7 +676,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 3. 输入新卡密
 4. 确认续费
 
-![卡密管理](pic/截图6.png)
+![卡密管理](assets/screenshots/screenshot-06.png)
 
 ---
 
@@ -702,7 +690,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 5. 选择过滤模式：
    - **黑名单**：不偷选中的蔬菜
    - **白名单**：只偷选中的蔬菜
-6. 勾选蔬菜
+6. 勾选蔬菜 (支持一键全选、反选、清空)
 7. 保存设置
 
 ### 好友过滤
@@ -711,10 +699,10 @@ Docker 会自动选择适合您系统架构的镜像版本。
 3. 找到"偷好友过滤设置"
 4. 启用好友过滤
 5. 选择过滤模式
-6. 勾选好友（需先加载好友列表）
+6. 勾选好友（支持一键全选、反选、清空）
 7. 保存设置
 
-![偷菜设置](pic/截图7.png)
+![偷菜设置](assets/screenshots/screenshot-07.png)
 
 ---
 
@@ -723,7 +711,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 ### 下载预编译版本
 
 **从 GitHub Releases 下载**:
-访问 https://github.com/smdk000/qq-farm-ui-pro-max/releases 下载对应平台的可执行文件。
+访问 https://github.com/smdk000/qq-farm-bot-ui/releases 下载对应平台的可执行文件。
 
 | 平台 | 文件名 |
 |------|--------|
@@ -814,9 +802,9 @@ qq-farm-bot-ui/
 │   │   ├── stores/        # Pinia 状态管理
 │   │   └── views/         # 页面视图
 │   └── dist/              # 构建产物
-├── pic/                   # 文档图片
+├── assets/screenshots/    # 截图资源
 ├── docs/                  # 详细文档
-├── docker-compose.yml
+├── docker/                    # Docker 配置
 ├── pnpm-workspace.yaml
 └── package.json
 ```
@@ -944,6 +932,9 @@ qq-farm-bot-ui/
 ### Q1: 如何添加账号？
 A: 登录管理面板后，进入"账号"页面，点击"添加账号"，支持扫码登录或手动输入 QID 和密码。
 
+### Q1.1: 如何配置微信扫码登录？
+A: **Docker Compose 部署**：`docker-compose.prod.yml` 已包含 ipad860 服务，环境变量 `IPAD860_URL=http://ipad860:8058` 自动生效，无需额外配置。**本地开发**：需单独启动 ipad860 服务，或在 `.env` 中设置 `IPAD860_URL` 指向已有 ipad860 实例。添加账号时选择「微信扫码」，页面会展示二维码，用微信扫码即可完成登录。
+
 ### Q2: 账号离线了怎么办？
 A: 系统会自动检测账号离线状态，并发送推送通知（如果已配置）。可以手动重启账号或等待自动重连。
 
@@ -987,7 +978,8 @@ pnpm package:release
 
 ## 更新日志
 
-详见 [CHANGELOG.DEVELOPMENT.md](CHANGELOG.DEVELOPMENT.md)
+- 开发变更：[CHANGELOG.DEVELOPMENT.md](CHANGELOG.DEVELOPMENT.md)
+- 部署与版本记录：[logs/development/Update.log](logs/development/Update.log)
 
 ---
 

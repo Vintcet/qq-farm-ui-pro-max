@@ -3,7 +3,7 @@
  * 用于管理 AI 编程时的上下文记忆
  */
 
-const OpenVikingClient = require('../openviking-service/client');
+const OpenVikingClient = require('../../../services/openviking/client');
 const logger = require('./utils/logger');
 
 class ContextManager {
@@ -20,11 +20,11 @@ class ContextManager {
     try {
       const baseURL = process.env.OPENVIKING_URL || 'http://localhost:5000';
       this.client = new OpenVikingClient(baseURL);
-      
+
       // 检查服务是否可用
       const health = await this.client.healthCheck();
       this.enabled = health.status === 'healthy';
-      
+
       if (this.enabled) {
         logger.info('[ContextManager] OpenViking 服务已连接', {
           workspace: health.workspace
@@ -32,7 +32,7 @@ class ContextManager {
       } else {
         logger.warn('[ContextManager] OpenViking 服务未就绪');
       }
-      
+
       return this.enabled;
     } catch (error) {
       logger.error('[ContextManager] 初始化失败', { error: error.message });
@@ -119,7 +119,7 @@ class ContextManager {
       );
 
       this.currentContext = result.context;
-      
+
       logger.info('[ContextManager] 获取上下文成功', {
         query,
         contextLength: result.context?.length || 0

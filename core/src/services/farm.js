@@ -5,7 +5,7 @@
 const protobuf = require('protobufjs');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
-const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, recordSuspendUntil } = require('../models/store');
+const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, recordSuspendUntil, getTimingConfig, getConfigSnapshot } = require('../models/store');
 const { sendMsgAsync, sendMsgAsyncUrgent, getUserState, networkEvents, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, getServerTimeSec, toTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -139,7 +139,8 @@ async function fertilizeOrganicLoop(landIds) {
         }
 
         idx = (idx + 1) % ids.length;
-        await sleep(500);
+        // 随机化施肥间隔 (400~700ms)，避免固定 500ms 节奏被检测
+        await sleep(400 + Math.floor(Math.random() * 300));
     }
 
     if (successCount >= MAX_ORGANIC_ROUNDS) {
@@ -285,7 +286,10 @@ async function harvestUrgent(landIds) {
 
 /**
  * 防偷抢收函数（60秒施肥并瞬间收获）- 全部使用紧急通道
+ * ANTI_STEAL_MAX_MATURE_SEC = 75s (60s施肥加速 + 10s网络延迟 + 5s计时误差)
  */
+const ANTI_STEAL_MAX_MATURE_SEC = 75;
+
 async function antiStealHarvest(landId) {
     if (!landId) return;
     try {
@@ -324,8 +328,8 @@ async function antiStealHarvest(landId) {
         const nowSec = getServerTimeSec();
         const matureInSec = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
 
-        if (matureInSec <= 0 || matureInSec > 65) {
-            log('防偷', `[保护拦截] 土地#${landId} 发生生命周期漂移(当前距成熟:${matureInSec}s)，判定为玩家人为干预复种或抢收，已免除本次动作，成功保卫化肥资产`);
+        if (matureInSec <= 0 || matureInSec > ANTI_STEAL_MAX_MATURE_SEC) {
+            log('防偷', `[保护拦截] 土地#${landId} 发生生命周期漂移(当前距成熟:${matureInSec}s, 阈值:${ANTI_STEAL_MAX_MATURE_SEC}s)，判定为玩家人为干预复种或抢收，已免除本次动作，成功保卫化肥资产`);
             return;
         }
 
@@ -899,6 +903,41 @@ function analyzeLands(lands) {
         }
 
         if (phaseVal === PlantPhase.MATURE) {
+            const maturePhase = Array.isArray(plant.phases)
+                ? plant.phases.find((p) => p && toNum(p.phase) === PlantPhase.MATURE)
+                : null;
+            const matureBegin = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
+
+            const fullCfg = getConfigSnapshot() || {};
+            const accountMode = fullCfg.accountMode || 'main';
+            const harvestDelay = fullCfg.harvestDelay || { min: 180, max: 300 };
+
+            let isDelayed = false;
+            let remainingDelaySec = 0;
+
+            if (accountMode === 'alt' && harvestDelay.max > 0) {
+                const delayRange = Math.max(1, harvestDelay.max - harvestDelay.min);
+                // 使用土地 ID 生成稳定的延迟
+                const stableHash = (id * 997 + (matureBegin % 100000)) % delayRange;
+                const delaySec = harvestDelay.min + stableHash;
+
+                const effectiveMatureTime = matureBegin + delaySec;
+                if (nowSec < effectiveMatureTime) {
+                    isDelayed = true;
+                    remainingDelaySec = effectiveMatureTime - nowSec;
+                }
+            }
+
+            if (isDelayed) {
+                // 延迟收获中，作为生长中处理，不放入 harvestable
+                result.growing.push(id);
+
+                // 为了前端显示正确的倒计时，可以保留部分状态？
+                // 这里我们不在 getLandsDetail 中改变 original matureInSec，
+                // 由于 analyzeLands 返回的 status 会控制是否可收，我们只需归入 growing 即可。
+                continue;
+            }
+
             result.harvestable.push(id);
             const plantId = toNum(plant.id);
             const plantNameFromConfig = getPlantName(plantId);
@@ -976,10 +1015,12 @@ async function checkFarm() {
     // 休眠时长：随机 30~90 分钟
     // 冷却基准：使用独立变量 lastGhostingEndedAt 而非 suspendUntil，
     //           因为 suspendUntil 语义为"休眠到期时间戳"，可能代表未来时间
-    const GHOSTING_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 小时最小冷却期
-    const GHOSTING_PROBABILITY = 0.02;                // 2% 触发率
-    const GHOSTING_MIN_MIN = 30;                      // 最短打盹 30 分钟
-    const GHOSTING_MAX_MIN = 90;                      // 最长打盹 90 分钟
+    // 从全局时间参数配置中动态读取 Ghosting 参数（管理员可通过面板调整）
+    const _tc = getTimingConfig();
+    const GHOSTING_COOLDOWN_MS = _tc.ghostingCooldownMin * 60 * 1000; // 冷却期(分钟→毫秒)
+    const GHOSTING_PROBABILITY = _tc.ghostingProbability;              // 触发概率
+    const GHOSTING_MIN_MIN = _tc.ghostingMinMin;                       // 最短打盹(分钟)
+    const GHOSTING_MAX_MIN = _tc.ghostingMaxMin;                       // 最长打盹(分钟)
     if (Math.random() < GHOSTING_PROBABILITY) {
         const timeSinceLastGhosting = Date.now() - lastGhostingEndedAt;
         if (lastGhostingEndedAt === 0 || timeSinceLastGhosting > GHOSTING_COOLDOWN_MS) {
@@ -1225,7 +1266,9 @@ function startFarmCheckLoop(options = {}) {
     farmLoopRunning = true;
     networkEvents.on('landsChanged', onLandsChangedPush);
     if (!externalSchedulerMode) {
-        scheduleNextFarmCheck(2000);
+        // 初始延迟 5~15 秒随机，模拟人类登录后不会立即操作的行为
+        const initialDelay = 5000 + Math.floor(Math.random() * 10000);
+        scheduleNextFarmCheck(initialDelay);
     }
 }
 

@@ -81,6 +81,23 @@ export interface WorkflowConfig {
   friend: WorkflowLaneConfig
 }
 
+export interface TimingConfig {
+  heartbeatIntervalMs: number
+  rateLimitIntervalMs: number
+  ghostingProbability: number
+  ghostingCooldownMin: number
+  ghostingMinMin: number
+  ghostingMaxMin: number
+  inviteRequestDelay: number
+}
+
+export interface TimingParameter {
+  key: string
+  label: string
+  value: any
+  group: string
+}
+
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
@@ -92,6 +109,9 @@ export interface SettingsState {
   trialConfig: TrialCardConfig
   thirdPartyApi: ThirdPartyApiConfig
   workflowConfig: WorkflowConfig
+  timingConfig: TimingConfig
+  defaultTimingConfig: TimingConfig
+  readonlyTimingParams: TimingParameter[]
 }
 
 export const useSettingStore = defineStore('setting', () => {
@@ -129,8 +149,28 @@ export const useSettingStore = defineStore('setting', () => {
       farm: { enabled: false, minInterval: 30, maxInterval: 120, nodes: [] },
       friend: { enabled: false, minInterval: 60, maxInterval: 300, nodes: [] },
     },
+    timingConfig: {
+      heartbeatIntervalMs: 25000,
+      rateLimitIntervalMs: 334,
+      ghostingProbability: 0.02,
+      ghostingCooldownMin: 240,
+      ghostingMinMin: 30,
+      ghostingMaxMin: 90,
+      inviteRequestDelay: 2000,
+    },
+    defaultTimingConfig: {
+      heartbeatIntervalMs: 25000,
+      rateLimitIntervalMs: 334,
+      ghostingProbability: 0.02,
+      ghostingCooldownMin: 240,
+      ghostingMinMin: 30,
+      ghostingMaxMin: 90,
+      inviteRequestDelay: 2000,
+    },
+    readonlyTimingParams: [],
   })
   const loading = ref(false)
+  const timingLoading = ref(false)
 
   async function fetchSettings(accountId: string) {
     if (!accountId)
@@ -170,7 +210,7 @@ export const useSettingStore = defineStore('setting', () => {
   async function saveSettings(accountId: string, newSettings: any) {
     if (!accountId)
       return { ok: false, error: '未选择账号' }
-    loading.value = true
+    // 不设置 loading，避免整页切换导致闪烁；Settings.vue 已用 saving 控制按钮加载态
     try {
       // 1. Save general settings
       const settingsPayload: Record<string, any> = {
@@ -204,12 +244,12 @@ export const useSettingStore = defineStore('setting', () => {
       return { ok: true }
     }
     finally {
-      loading.value = false
+      // loading 未在此处修改，无需 finally 中重置
     }
   }
 
   async function saveOfflineConfig(config: OfflineConfig) {
-    loading.value = true
+    // 不设置 loading，避免整页切换导致闪烁；Settings.vue 已用 offlineSaving 控制按钮加载态
     try {
       const { data } = await api.post('/api/settings/offline-reminder', config)
       if (data && data.ok) {
@@ -219,19 +259,14 @@ export const useSettingStore = defineStore('setting', () => {
       return { ok: false, error: '保存失败' }
     }
     finally {
-      loading.value = false
+      // loading 未在此处修改，无需 finally 中重置
     }
   }
 
   async function changeAdminPassword(oldPassword: string, newPassword: string) {
-    loading.value = true
-    try {
-      const res = await api.post('/api/admin/change-password', { oldPassword, newPassword })
-      return res.data
-    }
-    finally {
-      loading.value = false
-    }
+    // 不设置 loading，避免整页切换导致闪烁；Settings.vue 已用 passwordSaving 控制按钮加载态
+    const res = await api.post('/api/admin/change-password', { oldPassword, newPassword })
+    return res.data
   }
 
   async function fetchTrialCardConfig() {
@@ -261,7 +296,7 @@ export const useSettingStore = defineStore('setting', () => {
   }
 
   async function saveThirdPartyApiConfig(config: ThirdPartyApiConfig) {
-    loading.value = true
+    // 不设置 loading，避免整页切换导致闪烁；Settings.vue 已用 thirdPartyApiSaving 控制按钮加载态
     try {
       const { data } = await api.post('/api/admin/third-party-api', config)
       if (data && data.ok) {
@@ -271,9 +306,42 @@ export const useSettingStore = defineStore('setting', () => {
       return { ok: false, error: '保存失败' }
     }
     finally {
-      loading.value = false
+      // loading 未在此处修改，无需 finally 中重置
     }
   }
 
-  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, changeAdminPassword, fetchTrialCardConfig, fetchThirdPartyApiConfig, saveThirdPartyApiConfig }
+  async function fetchTimingConfig() {
+    timingLoading.value = true
+    try {
+      const { data } = await api.get('/api/settings/timing-config')
+      if (data && data.ok && data.data) {
+        settings.value.timingConfig = data.data.config
+        settings.value.defaultTimingConfig = data.data.defaults
+        settings.value.readonlyTimingParams = data.data.readonlyParams || []
+        return data.data
+      }
+    }
+    catch (e) {
+      console.error('获取时间参数配置失败:', e)
+    }
+    finally {
+      timingLoading.value = false
+    }
+  }
+
+  async function saveTimingConfig(config: TimingConfig) {
+    try {
+      const { data } = await api.post('/api/settings/timing-config', config)
+      if (data && data.ok) {
+        settings.value.timingConfig = data.data
+        return { ok: true }
+      }
+      return { ok: false, error: data?.error || '保存失败' }
+    }
+    catch (e: any) {
+      return { ok: false, error: e.message }
+    }
+  }
+
+  return { settings, loading, timingLoading, fetchSettings, saveSettings, saveOfflineConfig, changeAdminPassword, fetchTrialCardConfig, fetchThirdPartyApiConfig, saveThirdPartyApiConfig, fetchTimingConfig, saveTimingConfig }
 })

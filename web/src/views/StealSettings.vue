@@ -16,7 +16,7 @@ const farmStore = useFarmStore()
 const friendStore = useFriendStore()
 const settingStore = useSettingStore()
 
-const { currentAccountId, accounts } = storeToRefs(accountStore)
+const { currentAccountId, currentAccount, accounts } = storeToRefs(accountStore)
 const { seeds } = storeToRefs(farmStore)
 const { cachedFriends: friends, loading: friendsLoading } = storeToRefs(friendStore)
 const { settings, loading: settingsLoading } = storeToRefs(settingStore)
@@ -91,13 +91,14 @@ const selectedAccount = ref<string>(currentAccountId.value || '')
 function syncLocalSettings() {
   if (settings.value && settings.value.automation) {
     const s = settings.value.automation as any
+    // 后端返回的 plantIds/friendIds 为字符串，需转为数字以便与 seed.seedId 等正确匹配
     localSettings.value.automation = {
       stealFilterEnabled: s.stealFilterEnabled ?? false,
       stealFilterMode: s.stealFilterMode ?? 'blacklist',
-      stealFilterPlantIds: [...(s.stealFilterPlantIds || [])],
+      stealFilterPlantIds: (s.stealFilterPlantIds || []).map((id: any) => Number(id)),
       stealFriendFilterEnabled: s.stealFriendFilterEnabled ?? false,
       stealFriendFilterMode: s.stealFriendFilterMode ?? 'blacklist',
-      stealFriendFilterIds: [...(s.stealFriendFilterIds || [])],
+      stealFriendFilterIds: (s.stealFriendFilterIds || []).map((id: any) => Number(id)),
     }
   }
 }
@@ -147,7 +148,8 @@ watch(() => selectedAccount.value, () => {
   loadData()
 })
 
-watch(() => currentAccountId.value, (newId) => {
+watch(() => currentAccount.value, (acc) => {
+  const newId = acc ? String(acc.id || acc.uin || '') : ''
   if (newId && newId !== selectedAccount.value) {
     selectedAccount.value = newId
   }
@@ -182,14 +184,26 @@ function togglePlant(seedId: number) {
 }
 
 // 批量设置植物选中状态
-// 如果 mode 是 blacklist，全选意味着“全不偷”，全不选意味着“全偷”
-// 如果 mode 是 whitelist，全选意味着“全偷”，全不选意味着“全不偷”
 function selectAllPlants() {
-  localSettings.value.automation.stealFilterPlantIds = filteredPlants.value.map(s => s.seedId)
+  const currentSet = new Set(localSettings.value.automation.stealFilterPlantIds)
+  filteredPlants.value.forEach(s => currentSet.add(s.seedId))
+  localSettings.value.automation.stealFilterPlantIds = Array.from(currentSet)
 }
 
 function clearAllPlants() {
-  localSettings.value.automation.stealFilterPlantIds = []
+  const currentSet = new Set(localSettings.value.automation.stealFilterPlantIds)
+  filteredPlants.value.forEach(s => currentSet.delete(s.seedId))
+  localSettings.value.automation.stealFilterPlantIds = Array.from(currentSet)
+}
+
+function invertAllPlants() {
+  const currentArr = localSettings.value.automation.stealFilterPlantIds
+  const filteredIds = filteredPlants.value.map(s => s.seedId)
+  const newArr = currentArr.filter((id: number) => !filteredIds.includes(id))
+  filteredIds.forEach((id: number) => {
+    if (!currentArr.includes(id)) newArr.push(id)
+  })
+  localSettings.value.automation.stealFilterPlantIds = newArr
 }
 
 // === Friends Logic ===
@@ -224,11 +238,25 @@ function toggleFriend(id: number) {
 }
 
 function selectAllFriends() {
-  localSettings.value.automation.stealFriendFilterIds = filteredFriends.value.map(f => Number(f.gid || f.id))
+  const currentSet = new Set(localSettings.value.automation.stealFriendFilterIds)
+  filteredFriends.value.forEach(f => currentSet.add(Number(f.gid || f.id)))
+  localSettings.value.automation.stealFriendFilterIds = Array.from(currentSet)
 }
 
 function clearAllFriends() {
-  localSettings.value.automation.stealFriendFilterIds = []
+  const currentSet = new Set(localSettings.value.automation.stealFriendFilterIds)
+  filteredFriends.value.forEach(f => currentSet.delete(Number(f.gid || f.id)))
+  localSettings.value.automation.stealFriendFilterIds = Array.from(currentSet)
+}
+
+function invertAllFriends() {
+  const currentArr = localSettings.value.automation.stealFriendFilterIds
+  const filteredIds = filteredFriends.value.map(f => Number(f.gid || f.id))
+  const newArr = currentArr.filter((id: number) => !filteredIds.includes(id))
+  filteredIds.forEach((id: number) => {
+    if (!currentArr.includes(id)) newArr.push(id)
+  })
+  localSettings.value.automation.stealFriendFilterIds = newArr
 }
 
 // === Save Logic ===
@@ -384,6 +412,24 @@ async function saveAccountSettings() {
             @click="selectAllPlants"
           >
             <div class="i-carbon-checkmark-outline mr-1.5 text-sm" /> 全选
+          </BaseButton>
+
+          <!-- Invert All Button -->
+          <BaseButton
+            v-if="activeTab === 'friends'"
+            size="sm"
+            class="border border-gray-300/50 bg-black/5 dark:bg-white/5 text-xs font-bold transition-all hover:bg-black/10 dark:hover:bg-white/10 !px-4 !py-1.5"
+            @click="invertAllFriends"
+          >
+            反选
+          </BaseButton>
+          <BaseButton
+            v-else
+            size="sm"
+            class="border border-gray-300/50 bg-black/5 dark:bg-white/5 text-xs font-bold transition-all hover:bg-black/10 dark:hover:bg-white/10 !px-4 !py-1.5"
+            @click="invertAllPlants"
+          >
+            反选
           </BaseButton>
 
           <!-- Clear All Button - Red gradient for visibility -->

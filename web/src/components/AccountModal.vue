@@ -65,7 +65,7 @@ async function doQRCheck() {
         // 登录成功 —— 立即停止轮询，不再发任何请求
         stopQRCheck()
         qrStatus.value = '登录成功'
-        const { uin, code: authCode, nickname } = res.data.data
+        const { uin, code: authCode, nickname, avatar } = res.data.data
 
         let accName = form.name.trim()
         if (!accName) {
@@ -79,6 +79,8 @@ async function doQRCheck() {
           loginType: 'qr',
           name: props.editData ? (props.editData.name || accName) : accName,
           platform: qrPlatform.value,
+          nick: nickname || '',
+          avatar: avatar || '',
         })
         return // 不再调度下一次
       }
