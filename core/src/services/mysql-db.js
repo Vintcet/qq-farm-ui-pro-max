@@ -123,6 +123,30 @@ async function initMysql() {
                     logger.info('✅ avatar 列迁移完成');
                 }
             }
+
+            // 检查 account_configs 表并执行增量迁移 002-account-mode.sql
+            const [modeCols] = await pool.execute(
+                `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'account_configs' AND COLUMN_NAME = 'account_mode'`,
+                [DB_NAME]
+            );
+            if (modeCols.length === 0) {
+                const modeMigrationPath = path.join(migrationsDir, '002-account-mode.sql');
+                if (fs.existsSync(modeMigrationPath)) {
+                    logger.info('检测到 account_configs 表缺少 account_mode 列，正在执行迁移 002-account-mode.sql...');
+                    const migConn = await mysql.createConnection({
+                        host: DB_HOST,
+                        port: DB_PORT,
+                        user: DB_USER,
+                        password: DB_PASS,
+                        database: DB_NAME,
+                        multipleStatements: true
+                    });
+                    const migSql = fs.readFileSync(modeMigrationPath, 'utf8');
+                    await migConn.query(migSql);
+                    await migConn.end();
+                    logger.info('✅ account_mode 新列迁移完成');
+                }
+            }
         }
 
         // 测试主池的连通性

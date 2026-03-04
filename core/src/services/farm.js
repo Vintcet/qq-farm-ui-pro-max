@@ -1003,39 +1003,43 @@ let consecutiveErrors = 0; // Phase 3: 指数退避计数
 async function checkFarm() {
     const state = getUserState();
 
-    // Phase 2: 检测休眠锁
-    if (state.suspendUntil && Date.now() < state.suspendUntil) {
+    // Phase 2: 检测休眠锁 — 休眠期间仍允许收获自己土地的成熟作物并播种
+    // 原逻辑：休眠直接 return false 跳过全部操作
+    // 新逻辑：标记 isSuspended，跳过 Ghosting 打盹触发，但收获播种正常执行
+    const isSuspended = state.suspendUntil && Date.now() < state.suspendUntil;
+    if (isSuspended) {
         const resetMinutes = Math.ceil((state.suspendUntil - Date.now()) / 60000);
-        logWarn('农场', `账号风控自愈休眠中，跳过本次巡田 (剩余约 ${resetMinutes} 分钟)...`);
-        return false;
+        log('农场', `风控休眠中 (剩余约 ${resetMinutes} 分钟)，仍检查自家土地收获与播种...`);
     }
 
-    // ======== Ghosting 打盹：主动随机触发休眠，模拟人类离开 ========
+    // ======== Ghosting 打盹：主动随机触发休眠，模拟人类离开（休眠期间跳过） ========
     // 触发条件：每次巡查 ~2% 概率 + 距上次打盹结束至少 4 小时冷却
     // 休眠时长：随机 30~90 分钟
     // 冷却基准：使用独立变量 lastGhostingEndedAt 而非 suspendUntil，
     //           因为 suspendUntil 语义为"休眠到期时间戳"，可能代表未来时间
     // 从全局时间参数配置中动态读取 Ghosting 参数（管理员可通过面板调整）
-    const _tc = getTimingConfig();
-    const GHOSTING_COOLDOWN_MS = _tc.ghostingCooldownMin * 60 * 1000; // 冷却期(分钟→毫秒)
-    const GHOSTING_PROBABILITY = _tc.ghostingProbability;              // 触发概率
-    const GHOSTING_MIN_MIN = _tc.ghostingMinMin;                       // 最短打盹(分钟)
-    const GHOSTING_MAX_MIN = _tc.ghostingMaxMin;                       // 最长打盹(分钟)
-    if (Math.random() < GHOSTING_PROBABILITY) {
-        const timeSinceLastGhosting = Date.now() - lastGhostingEndedAt;
-        if (lastGhostingEndedAt === 0 || timeSinceLastGhosting > GHOSTING_COOLDOWN_MS) {
-            const napMinutes = GHOSTING_MIN_MIN + Math.floor(Math.random() * (GHOSTING_MAX_MIN - GHOSTING_MIN_MIN + 1));
-            state.suspendUntil = Date.now() + napMinutes * 60 * 1000;
-            // 预记录本次打盹的结束时间，供下次冷却判断
-            lastGhostingEndedAt = state.suspendUntil;
-            if (CONFIG.accountId) {
-                recordSuspendUntil(CONFIG.accountId, state.suspendUntil);
+    if (!isSuspended) {
+        const _tc = getTimingConfig();
+        const GHOSTING_COOLDOWN_MS = _tc.ghostingCooldownMin * 60 * 1000; // 冷却期(分钟→毫秒)
+        const GHOSTING_PROBABILITY = _tc.ghostingProbability;              // 触发概率
+        const GHOSTING_MIN_MIN = _tc.ghostingMinMin;                       // 最短打盹(分钟)
+        const GHOSTING_MAX_MIN = _tc.ghostingMaxMin;                       // 最长打盹(分钟)
+        if (Math.random() < GHOSTING_PROBABILITY) {
+            const timeSinceLastGhosting = Date.now() - lastGhostingEndedAt;
+            if (lastGhostingEndedAt === 0 || timeSinceLastGhosting > GHOSTING_COOLDOWN_MS) {
+                const napMinutes = GHOSTING_MIN_MIN + Math.floor(Math.random() * (GHOSTING_MAX_MIN - GHOSTING_MIN_MIN + 1));
+                state.suspendUntil = Date.now() + napMinutes * 60 * 1000;
+                // 预记录本次打盹的结束时间，供下次冷却判断
+                lastGhostingEndedAt = state.suspendUntil;
+                if (CONFIG.accountId) {
+                    recordSuspendUntil(CONFIG.accountId, state.suspendUntil);
+                }
+                log('风控', `🛏️ Ghosting 打盹触发：模拟人类离开，休眠 ${napMinutes} 分钟`, {
+                    module: 'farm', event: 'ghosting_nap', result: 'triggered',
+                    napMinutes, resumeAt: new Date(state.suspendUntil).toLocaleTimeString(),
+                });
+                return false;
             }
-            log('风控', `🛏️ Ghosting 打盹触发：模拟人类离开，休眠 ${napMinutes} 分钟`, {
-                module: 'farm', event: 'ghosting_nap', result: 'triggered',
-                napMinutes, resumeAt: new Date(state.suspendUntil).toLocaleTimeString(),
-            });
-            return false;
         }
     }
     // ======== Ghosting 打盹 END ========

@@ -25,6 +25,7 @@ const userStore = require('../models/user-store');
 const usersController = require('./users');
 const cardsController = require('./cards');
 const { validateUsername, validatePassword, validateCardCode } = require('../utils/validators');
+const accountRepository = require('../repositories/account-repository');
 
 const adminLogger = createModuleLogger('admin');
 

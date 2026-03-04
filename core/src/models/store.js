@@ -1225,6 +1225,7 @@ async function getAccounts() {
         status: r.status,
         api_error_count: r.api_error_count,
         username: r.username || '',
+        accountMode: r.account_mode || 'main',
         createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
         updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
     }));
@@ -1246,6 +1247,7 @@ async function getAccountsFull() {
         running: !!r.running,
         status: r.status,
         username: r.username || '',
+        accountMode: r.account_mode || 'main',
         createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
         updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
         ...(r.auth_data && typeof r.auth_data === 'object' ? r.auth_data : {})
@@ -1268,6 +1270,7 @@ async function getAccountsFullPaged(page = 1, pageSize = 100) {
         running: !!r.running,
         status: r.status,
         username: r.username || '',
+        accountMode: r.account_mode || 'main',
         createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
         updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
         ...(r.auth_data && typeof r.auth_data === 'object' ? r.auth_data : {})
@@ -1292,6 +1295,7 @@ async function getAccountFull(accountId) {
         running: !!row.running,
         status: row.status,
         username: row.username || '',
+        accountMode: row.account_mode || 'main',
         createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
         updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
         ...(row.auth_data && typeof row.auth_data === 'object' ? row.auth_data : {})
