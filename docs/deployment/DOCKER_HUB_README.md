@@ -1,5 +1,7 @@
 # Docker Hub README for QQ Farm Bot UI
 
+> 历史说明（2026-03-07）：本文保留旧版本发布参考，当前有效工作流以 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md` 为准；日志挂载请使用 `./logs:/app/logs`。
+
 ## 🚀 QQ 农场智能助手 - 多账号挂机 + Web 面板
 
 基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
@@ -45,7 +47,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ./data:/app/core/data
-      - ./logs:/app/core/logs
+      - ./logs:/app/logs
       - ./backup:/app/core/backup
 ```
 
@@ -62,7 +64,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3080:3000 \
   -v ./data:/app/core/data \
-  -v ./logs:/app/core/logs \
+  -v ./logs:/app/logs \
   -v ./backup:/app/core/backup \
   -e ADMIN_PASSWORD=your_password \
   -e TZ=Asia/Shanghai \
@@ -89,7 +91,7 @@ Docker 会自动选择适合您系统架构的镜像版本。
 | 宿主机路径 | 容器内路径 | 说明 |
 |-----------|-----------|------|
 | `./data` | `/app/core/data` | **核心数据库**（账号配置、用户数据） |
-| `./logs` | `/app/core/logs` | 日志文件（运行日志、操作日志） |
+| `./logs` | `/app/logs` | 日志文件（运行日志、操作日志） |
 | `./backup` | `/app/core/backup` | 备份文件目录 |
 
 ### ⚠️ 重要提醒

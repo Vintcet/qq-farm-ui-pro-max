@@ -1,5 +1,7 @@
 # GitHub 同步计划
 
+> 历史说明（2026-03-07）：本文记录的是 `github-sync` 时代的隔离同步方案，现已退役。当前有效工作流请参见 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md`。
+
 > 创建时间：2026-03-01  
 > 目标：将项目安全脱敏后同步到 GitHub
 

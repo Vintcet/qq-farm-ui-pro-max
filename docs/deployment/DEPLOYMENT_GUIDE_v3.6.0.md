@@ -1,5 +1,7 @@
 # 🚀 QQ 农场助手 - v3.6.0 Docker 部署完整指南
 
+> 历史说明（2026-03-07）：本文对应旧版本部署说明，当前有效工作流以 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md` 为准；日志挂载请使用 `./logs:/app/logs`。
+
 **发布日期**: 2026-03-01  
 **版本**: v3.6.0  
 **状态**: ✅ 生产就绪
@@ -52,7 +54,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ./data:/app/core/data
-      - ./logs:/app/core/logs
+      - ./logs:/app/logs
       - ./backup:/app/core/backup
 ```
 
@@ -69,7 +71,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3080:3000 \
   -v ./data:/app/core/data \
-  -v ./logs:/app/core/logs \
+  -v ./logs:/app/logs \
   -v ./backup:/app/core/backup \
   -e ADMIN_PASSWORD=your_password \
   -e TZ=Asia/Shanghai \
@@ -202,7 +204,7 @@ docker logs -f qq-farm-bot-ui
 | 宿主机路径 | 容器内路径 | 说明 |
 |-----------|-----------|------|
 | `./data` | `/app/core/data` | **核心数据库**（账号配置、用户数据） |
-| `./logs` | `/app/core/logs` | 日志文件（运行日志、操作日志） |
+| `./logs` | `/app/logs` | 日志文件（运行日志、操作日志） |
 | `./backup` | `/app/core/backup` | 备份文件目录 |
 
 ### 备份策略

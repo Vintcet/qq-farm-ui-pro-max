@@ -15,11 +15,11 @@
 - 路径收敛前的原始状态已快照到 `archive/runtime-snapshots/20260307-path-unify/`
 - 根目录 `nc_local_version/` 权限残留已清除，仅保留归档副本 `archive/tools-data/nc_local_version/`
 - 根目录 `图鉴/` 已归档到 `archive/tools-data/图鉴/`，根目录原件已移除
+- 现行部署与维护文档已统一到根目录主仓工作流，并补充了历史文档说明索引
 
 ## 当前未处理
 
-- 历史文档中仍有大量 `github-sync` 路径说明，尚未统一改写。
-- 历史文档中仍有少量 `core/data` 与旧日志路径说明，尚未统一改写。
+- 部分历史 HTML 计划与旧版本发布页仍保留旧 `github-sync`、旧日志挂载表述，但已通过历史说明文档进行隔离提示。
 
 ## 说明
 

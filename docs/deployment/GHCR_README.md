@@ -1,5 +1,7 @@
 # GitHub Container Registry (GHCR) 部署说明
 
+> 历史说明（2026-03-07）：本文保留旧版本发布参考，当前有效工作流以 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md` 为准；日志挂载请使用 `./logs:/app/logs`。
+
 ## 📦 镜像地址
 
 QQ 农场助手 Docker 镜像已同步推送到 GitHub Container Registry：
@@ -44,7 +46,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ./data:/app/core/data
-      - ./logs:/app/core/logs
+      - ./logs:/app/logs
       - ./backup:/app/core/backup
 ```
 
@@ -56,7 +58,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3080:3000 \
   -v ./data:/app/core/data \
-  -v ./logs:/app/core/logs \
+  -v ./logs:/app/logs \
   -v ./backup:/app/core/backup \
   -e ADMIN_PASSWORD=your_password \
   -e TZ=Asia/Shanghai \

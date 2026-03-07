@@ -1,5 +1,7 @@
 # QQ 农场智能助手 - 多账号挂机 + Web 面板
 
+> 草稿说明（2026-03-07）：本文为历史草稿，内部图片与路径引用不再代表当前仓库结构。当前有效工作流与目录口径请参见 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md`。
+
 基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
 
 ![版本](https://img.shields.io/badge/版本-v3.8.0-blue)
@@ -143,7 +145,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3080:3000 \
   -v ./data:/app/core/data \
-  -v ./logs:/app/core/logs \
+  -v ./logs:/app/logs \
   -v ./backup:/app/core/backup \
   -e ADMIN_PASSWORD=qq007qq008 \
   -e TZ=Asia/Shanghai \

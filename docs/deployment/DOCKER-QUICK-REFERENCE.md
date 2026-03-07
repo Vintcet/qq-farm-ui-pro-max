@@ -1,5 +1,7 @@
 # Docker 快速参考卡片
 
+> 历史说明（2026-03-07）：本文为旧版速查卡，当前有效工作流以 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md` 为准。
+
 > 📦 QQ 农场助手 Docker 部署 - 一分钟快速上手
 
 ---
@@ -171,7 +173,7 @@ docker top qq-farm-bot
 | 容器路径 | 宿主机路径 | 说明 |
 |----------|------------|------|
 | `/app/core/data` | `./data` | 核心数据（必须） |
-| `/app/core/logs` | `./logs` | 日志文件（可选） |
+| `/app/logs` | `./logs` | 日志文件（可选） |
 | `/app/core/backup` | `./backup` | 备份目录（可选） |
 
 ---

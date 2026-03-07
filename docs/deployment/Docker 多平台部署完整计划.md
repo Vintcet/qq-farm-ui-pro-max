@@ -1,5 +1,7 @@
 # QQ 农场助手 - Docker 多平台构建与部署完整计划
 
+> 历史说明（2026-03-07）：本文保留旧版本执行记录，当前有效工作流以 `docs/guides/REPO_ROOT_WORKFLOW_GUIDE.md` 为准；日志挂载请使用 `./logs:/app/logs`。
+
 **版本**: v3.3.3  
 **创建日期**: 2026-03-01  
 **作者**: smdk000  
@@ -204,7 +206,7 @@ services:
     
     volumes:
       - ./data:/app/core/data
-      - ./logs:/app/core/logs
+      - ./logs:/app/logs
       - ./backup:/app/core/backup
     
     healthcheck:
@@ -231,7 +233,7 @@ services:
 | 宿主机路径 | 容器内路径 | 说明 |
 |-----------|-----------|------|
 | `./data` | `/app/core/data` | 核心数据库目录（账号配置、用户数据等） |
-| `./logs` | `/app/core/logs` | 日志文件目录（运行日志、操作日志等） |
+| `./logs` | `/app/logs` | 日志文件目录（运行日志、操作日志等） |
 | `./backup` | `/app/core/backup` | 备份文件目录（数据库备份、配置备份等） |
 
 ### 备份策略
