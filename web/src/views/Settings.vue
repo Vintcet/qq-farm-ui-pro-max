@@ -800,6 +800,100 @@ function getCurrentAccountBaseline() {
   }
 }
 
+const defaultReportConfig = {
+  enabled: false,
+  channel: 'webhook',
+  endpoint: '',
+  token: '',
+  smtpHost: '',
+  smtpPort: 465,
+  smtpSecure: true,
+  smtpUser: '',
+  smtpPass: '',
+  emailFrom: '',
+  emailTo: '',
+  title: '经营汇报',
+  hourlyEnabled: false,
+  hourlyMinute: 5,
+  dailyEnabled: true,
+  dailyHour: 21,
+  dailyMinute: 0,
+  retentionDays: 30,
+}
+
+const defaultIntervals = {
+  farmMin: 30,
+  farmMax: 200,
+  friendMin: 100,
+  friendMax: 600,
+  helpMin: 100,
+  helpMax: 600,
+  stealMin: 100,
+  stealMax: 600,
+}
+
+const defaultFriendQuietHours = {
+  enabled: false,
+  start: '23:00',
+  end: '07:00',
+}
+
+const defaultStakeoutSteal = {
+  enabled: false,
+  delaySec: 3,
+}
+
+const defaultAutomationConfig = {
+  farm: false,
+  task: false,
+  sell: false,
+  friend: false,
+  farm_push: false,
+  land_upgrade: false,
+  landUpgradeTarget: 6,
+  friend_steal: false,
+  friend_help: false,
+  friend_bad: false,
+  friend_help_exp_limit: false,
+  email: false,
+  fertilizer_gift: false,
+  fertilizer_buy: false,
+  fertilizer_buy_limit: 100,
+  free_gifts: false,
+  share_reward: false,
+  vip_gift: false,
+  month_card: false,
+  open_server_gift: false,
+  fertilizer: 'none',
+  stealFilterEnabled: false,
+  stealFilterMode: 'blacklist',
+  stealFilterPlantIds: [] as number[],
+  stealFriendFilterEnabled: false,
+  stealFriendFilterMode: 'blacklist',
+  stealFriendFilterIds: [] as number[],
+  friend_auto_accept: false,
+  fertilizer_60s_anti_steal: false,
+  fertilizer_smart_phase: false,
+  fastHarvest: false,
+  forceGetAllEnabled: false,
+}
+
+const defaultTradeConfig = {
+  sell: {
+    scope: 'fruit_only' as const,
+    keepMinEachFruit: 0,
+    keepFruitIds: [] as number[],
+    rareKeep: {
+      enabled: false,
+      judgeBy: 'either' as 'plant_level' | 'unit_price' | 'either',
+      minPlantLevel: 40,
+      minUnitPrice: 2000,
+    },
+    batchSize: 15,
+    previewBeforeManualSell: false,
+  },
+}
+
 function buildNormalizedTradeConfig(rawTradeConfig: any) {
   const sellConfig = ((rawTradeConfig || {}).sell || {}) as any
   const rareKeepConfig = (sellConfig.rareKeep || {}) as any
@@ -902,27 +996,6 @@ function buildSettingsPayloadFromState(state: any, keepFruitIdsSource?: any) {
   return payload
 }
 
-const defaultReportConfig = {
-  enabled: false,
-  channel: 'webhook',
-  endpoint: '',
-  token: '',
-  smtpHost: '',
-  smtpPort: 465,
-  smtpSecure: true,
-  smtpUser: '',
-  smtpPass: '',
-  emailFrom: '',
-  emailTo: '',
-  title: '经营汇报',
-  hourlyEnabled: false,
-  hourlyMinute: 5,
-  dailyEnabled: true,
-  dailyHour: 21,
-  dailyMinute: 0,
-  retentionDays: 30,
-}
-
 const reportModeOptions = [
   { label: '全部类型', value: 'all' },
   { label: '测试汇报', value: 'test' },
@@ -948,28 +1021,6 @@ const reportPageSizeOptions = [
   { label: '100 条/页', value: 100 },
 ]
 
-const defaultIntervals = {
-  farmMin: 30,
-  farmMax: 200,
-  friendMin: 100,
-  friendMax: 600,
-  helpMin: 100,
-  helpMax: 600,
-  stealMin: 100,
-  stealMax: 600,
-}
-
-const defaultFriendQuietHours = {
-  enabled: false,
-  start: '23:00',
-  end: '07:00',
-}
-
-const defaultStakeoutSteal = {
-  enabled: false,
-  delaySec: 3,
-}
-
 const defaultInventoryPlanting = {
   mode: 'disabled' as 'disabled' | 'prefer_inventory' | 'inventory_only',
   globalKeepCount: 0,
@@ -980,11 +1031,11 @@ function buildNormalizedInventoryPlantingConfig(input: any) {
   const raw = input && typeof input === 'object' ? input : {}
   const reserveRules = Array.isArray(raw.reserveRules)
     ? raw.reserveRules
-      .map((rule: any) => ({
-        seedId: resolveNumberWithFallback(rule?.seedId, 0),
-        keepCount: resolveNumberWithFallback(rule?.keepCount, 0),
-      }))
-      .filter((rule: any) => rule.seedId > 0)
+        .map((rule: any) => ({
+          seedId: resolveNumberWithFallback(rule?.seedId, 0),
+          keepCount: resolveNumberWithFallback(rule?.keepCount, 0),
+        }))
+        .filter((rule: any) => rule.seedId > 0)
     : []
   const seen = new Set<number>()
   return {
@@ -999,57 +1050,6 @@ function buildNormalizedInventoryPlantingConfig(input: any) {
       return true
     }),
   }
-}
-
-const defaultAutomationConfig = {
-  farm: false,
-  task: false,
-  sell: false,
-  friend: false,
-  farm_push: false,
-  land_upgrade: false,
-  landUpgradeTarget: 6,
-  friend_steal: false,
-  friend_help: false,
-  friend_bad: false,
-  friend_help_exp_limit: false,
-  email: false,
-  fertilizer_gift: false,
-  fertilizer_buy: false,
-  fertilizer_buy_limit: 100,
-  free_gifts: false,
-  share_reward: false,
-  vip_gift: false,
-  month_card: false,
-  open_server_gift: false,
-  fertilizer: 'none',
-  stealFilterEnabled: false,
-  stealFilterMode: 'blacklist',
-  stealFilterPlantIds: [] as number[],
-  stealFriendFilterEnabled: false,
-  stealFriendFilterMode: 'blacklist',
-  stealFriendFilterIds: [] as number[],
-  friend_auto_accept: false,
-  fertilizer_60s_anti_steal: false,
-  fertilizer_smart_phase: false,
-  fastHarvest: false,
-  forceGetAllEnabled: false,
-}
-
-const defaultTradeConfig = {
-  sell: {
-    scope: 'fruit_only' as const,
-    keepMinEachFruit: 0,
-    keepFruitIds: [] as number[],
-    rareKeep: {
-      enabled: false,
-      judgeBy: 'either' as 'plant_level' | 'unit_price' | 'either',
-      minPlantLevel: 40,
-      minUnitPrice: 2000,
-    },
-    batchSize: 15,
-    previewBeforeManualSell: false,
-  },
 }
 
 const selectedReportLogCount = computed(() => selectedReportLogIds.value.length)
@@ -1627,10 +1627,10 @@ const fieldLabels: Record<string, string> = {
 }
 
 const diffFieldLabels: Record<string, string> = {
-  accountMode: '账号模式',
+  'accountMode': '账号模式',
   'harvestDelay.min': '随机延迟下限 (秒)',
   'harvestDelay.max': '随机延迟上限 (秒)',
-  riskPromptEnabled: '显示风控提示',
+  'riskPromptEnabled': '显示风控提示',
   'plantingStrategy': '种植策略',
   'plantingFallbackStrategy': '失配回退策略',
   'preferredSeedId': '优先种植种子',
@@ -1751,12 +1751,13 @@ function isPlainObject(value: any) {
 }
 
 function normalizeLeafForCompare(value: any) {
-  if (Array.isArray(value))
+  if (Array.isArray(value)) {
     return value.map((item) => {
       if (item && typeof item === 'object')
         return JSON.stringify(item)
       return String(item)
     }).sort()
+  }
   return value
 }
 
@@ -2428,7 +2429,7 @@ async function restoreTimingDefaults() {
         <!-- Strategy Content -->
         <div class="p-4 space-y-3">
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,260px)_1fr]">
-            <div class="rounded-xl border border-gray-200/70 bg-white/75 p-3 shadow-sm dark:border-gray-700/70 dark:bg-gray-900/40">
+            <div class="border border-gray-200/70 rounded-xl bg-white/75 p-3 shadow-sm dark:border-gray-700/70 dark:bg-gray-900/40">
               <BaseSwitch
                 v-model="localSettings.riskPromptEnabled"
                 label="显示风控功能提示"
@@ -2438,13 +2439,13 @@ async function restoreTimingDefaults() {
             </div>
             <div
               v-if="localSettings.riskPromptEnabled"
-              class="rounded-xl border border-sky-200/70 bg-linear-to-br from-sky-50 via-cyan-50 to-white p-4 text-sm shadow-sm dark:border-sky-800/40 dark:from-sky-950/40 dark:via-cyan-950/20 dark:to-gray-900/30"
+              class="bg-linear-to-br border border-sky-200/70 rounded-xl from-sky-50 via-cyan-50 to-white p-4 text-sm shadow-sm dark:border-sky-800/40 dark:from-sky-950/40 dark:via-cyan-950/20 dark:to-gray-900/30"
             >
               <div class="mb-2 flex items-center gap-2 text-sky-700 font-semibold dark:text-sky-300">
                 <div class="i-carbon-model-alt" />
                 主号 / 小号作用范围已按区服重构
               </div>
-              <div class="space-y-1.5 text-sky-900/80 leading-6 dark:text-sky-100/80">
+              <div class="text-sky-900/80 leading-6 space-y-1.5 dark:text-sky-100/80">
                 <div>当前账号区服：<strong>{{ currentAccountZoneLabel }}</strong>。QQ 区和微信区的数据互不打通，主号/小号关系只在同区内讨论。</div>
                 <div>协同前提：主号和小号必须互为<strong>游戏好友</strong>，否则“主小号协同”没有业务意义。</div>
                 <div>降级规则：若跨区或不是游戏好友，系统仍保留当前账号的运行策略，但会按<strong>独立账号</strong>理解，不再误套主小号联动。</div>
@@ -2452,7 +2453,7 @@ async function restoreTimingDefaults() {
             </div>
             <div
               v-if="localSettings.riskPromptEnabled"
-              class="rounded-xl border border-gray-200/70 bg-white/80 p-4 text-sm shadow-sm dark:border-gray-700/70 dark:bg-gray-900/40"
+              class="border border-gray-200/70 rounded-xl bg-white/80 p-4 text-sm shadow-sm dark:border-gray-700/70 dark:bg-gray-900/40"
             >
               <div class="mb-2 flex items-center gap-2 text-gray-900 font-semibold dark:text-gray-100">
                 <div class="i-carbon-chart-relationship" />
@@ -2610,10 +2611,12 @@ async function restoreTimingDefaults() {
             </div>
           </div>
 
-          <div class="rounded-xl border border-teal-200/70 bg-teal-50/70 p-4 dark:border-teal-800/40 dark:bg-teal-950/10">
+          <div class="border border-teal-200/70 rounded-xl bg-teal-50/70 p-4 dark:border-teal-800/40 dark:bg-teal-950/10">
             <div class="mb-3 flex items-center justify-between gap-3">
               <div>
-                <div class="text-sm text-teal-700 font-semibold dark:text-teal-300">库存优先种植</div>
+                <div class="text-sm text-teal-700 font-semibold dark:text-teal-300">
+                  库存优先种植
+                </div>
                 <div class="mt-1 text-xs text-teal-700/80 leading-5 dark:text-teal-200/70">
                   优先消耗背包现有种子。可按“全局保留数量 + 指定种子保留规则”决定哪些库存不参与自动种植。
                 </div>
@@ -2653,7 +2656,7 @@ async function restoreTimingDefaults() {
                 <div
                   v-for="(rule, index) in localSettings.inventoryPlanting.reserveRules"
                   :key="`inventory-rule-${index}`"
-                  class="grid grid-cols-1 gap-2 rounded-lg border border-teal-200/60 bg-white/70 p-3 md:grid-cols-[minmax(0,1fr)_140px_auto] dark:border-teal-800/30 dark:bg-slate-900/30"
+                  class="grid grid-cols-1 gap-2 border border-teal-200/60 rounded-lg bg-white/70 p-3 md:grid-cols-[minmax(0,1fr)_140px_auto] dark:border-teal-800/30 dark:bg-slate-900/30"
                 >
                   <BaseSelect
                     v-model="rule.seedId"
@@ -2678,7 +2681,7 @@ async function restoreTimingDefaults() {
                   </div>
                 </div>
               </div>
-              <div v-else class="rounded-lg border border-dashed border-teal-300/70 px-3 py-4 text-xs text-teal-700/75 dark:border-teal-700/40 dark:text-teal-200/70">
+              <div v-else class="border border-teal-300/70 rounded-lg border-dashed px-3 py-4 text-xs text-teal-700/75 dark:border-teal-700/40 dark:text-teal-200/70">
                 当前没有指定种子保留规则，系统只使用“全局保留数量”。
               </div>
             </div>
@@ -3203,7 +3206,7 @@ async function restoreTimingDefaults() {
               placeholder="提醒内容"
             />
 
-            <div v-if="localOffline.channel === 'webhook'" class="rounded-lg border border-gray-200/60 p-3 space-y-2 dark:border-gray-700/60">
+            <div v-if="localOffline.channel === 'webhook'" class="border border-gray-200/60 rounded-lg p-3 space-y-2 dark:border-gray-700/60">
               <BaseSwitch
                 v-model="localOffline.webhookCustomJsonEnabled"
                 label="Webhook 自定义 JSON"
@@ -3213,8 +3216,8 @@ async function restoreTimingDefaults() {
               <textarea
                 v-model="localOffline.webhookCustomJsonTemplate"
                 :disabled="!localOffline.webhookCustomJsonEnabled"
-                class="w-full min-h-[120px] rounded-md border border-gray-300/70 bg-white/80 p-2 text-xs font-mono dark:border-gray-600/70 dark:bg-black/20"
-                placeholder='{"title":"{{title}}","content":"{{content}}","accountId":"{{accountId}}","accountName":"{{accountName}}","timestamp":"{{timestamp}}"}'
+                class="min-h-[120px] w-full border border-gray-300/70 rounded-md bg-white/80 p-2 text-xs font-mono dark:border-gray-600/70 dark:bg-black/20"
+                placeholder="{&quot;title&quot;:&quot;{{title}}&quot;,&quot;content&quot;:&quot;{{content}}&quot;,&quot;accountId&quot;:&quot;{{accountId}}&quot;,&quot;accountName&quot;:&quot;{{accountName}}&quot;,&quot;timestamp&quot;:&quot;{{timestamp}}&quot;}"
               />
             </div>
           </div>
@@ -3332,7 +3335,7 @@ async function restoreTimingDefaults() {
                   />
                 </div>
 
-                <div v-else class="space-y-4 rounded-2xl border border-white/10 bg-black/10 p-4">
+                <div v-else class="border border-white/10 rounded-2xl bg-black/10 p-4 space-y-4">
                   <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <BaseInput
                       v-model="localSettings.reportConfig.smtpHost"

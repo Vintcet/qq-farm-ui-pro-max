@@ -73,12 +73,12 @@ const summary = computed(() => {
         <span class="rounded-full bg-red-100 px-2.5 py-1 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-300">偷菜 {{ summary.steal }}</span>
       </div>
 
-      <div v-if="visitorLogs.length === 0" class="glass-text-muted flex min-h-56 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300/70 bg-black/5 py-10 text-sm dark:border-white/15 dark:bg-black/20">
+      <div v-if="visitorLogs.length === 0" class="glass-text-muted min-h-56 flex flex-col items-center justify-center gap-3 border border-gray-300/70 rounded-lg border-dashed bg-black/5 py-10 text-sm dark:border-white/15 dark:bg-black/20">
         <div class="i-carbon-face-wink text-2xl" />
         <p>暂无访客事件</p>
       </div>
 
-      <div v-else class="max-h-[32rem] space-y-2 overflow-y-auto pr-1">
+      <div v-else class="max-h-[32rem] overflow-y-auto pr-1 space-y-2">
         <div
           v-for="(log, idx) in visitorLogs"
           :key="`${log.ts || idx}_${log.msg || ''}`"

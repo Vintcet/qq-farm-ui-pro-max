@@ -1,5 +1,3 @@
-/* eslint-disable no-alert */
-
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
@@ -196,10 +194,14 @@ const filters = ref({
 const showGenerateModal = ref(false)
 const showEditModal = ref(false)
 const showDetailModal = ref(false)
+const showActionConfirmModal = ref(false)
 const editingCard = ref<Card | null>(null)
 const detailCard = ref<Card | null>(null)
 const detailLogs = ref<CardLog[]>([])
 const generatedCards = ref<Card[]>([])
+const actionConfirmMessage = ref('')
+const actionConfirmLoading = ref(false)
+const actionConfirmHandler = ref<null | (() => Promise<void>)>(null)
 
 const newCard = ref({
   description: '',
@@ -488,10 +490,7 @@ async function saveEdit() {
   }
 }
 
-async function deleteCard(code: string) {
-  if (!window.confirm('确定要删除这张卡密吗？已使用卡密不可删除。'))
-    return
-
+async function performDeleteCard(code: string) {
   try {
     await api.delete(`/api/cards/${code}`)
     selectedCards.value = selectedCards.value.filter(item => item !== code)
@@ -501,6 +500,38 @@ async function deleteCard(code: string) {
   catch (error) {
     console.error('删除卡密失败:', error)
   }
+}
+
+function openActionConfirm(message: string, handler: () => Promise<void>) {
+  actionConfirmMessage.value = message
+  actionConfirmHandler.value = handler
+  showActionConfirmModal.value = true
+}
+
+function closeActionConfirm() {
+  if (actionConfirmLoading.value)
+    return
+  showActionConfirmModal.value = false
+  actionConfirmHandler.value = null
+  actionConfirmMessage.value = ''
+}
+
+async function confirmAction() {
+  if (!actionConfirmHandler.value)
+    return
+
+  actionConfirmLoading.value = true
+  try {
+    await actionConfirmHandler.value()
+    closeActionConfirm()
+  }
+  finally {
+    actionConfirmLoading.value = false
+  }
+}
+
+function deleteCard(code: string) {
+  openActionConfirm('确定要删除这张卡密吗？已使用卡密不可删除。', () => performDeleteCard(code))
 }
 
 async function batchSetEnabled(enabled: boolean) {
@@ -525,17 +556,11 @@ async function batchSetEnabled(enabled: boolean) {
   }
 }
 
-async function batchDelete() {
-  if (selectedCards.value.length === 0)
-    return
-
-  if (!window.confirm(`确定删除选中的 ${selectedCards.value.length} 张卡密吗？已使用卡密会自动跳过。`))
-    return
-
+async function performBatchDelete(codes: string[]) {
   batchActionLoading.value = true
   try {
     const res = await api.post('/api/cards/batch-delete', {
-      codes: selectedCards.value,
+      codes,
     })
 
     const deletedCount = res.data.deletedCount || 0
@@ -549,6 +574,14 @@ async function batchDelete() {
   }
 }
 
+function batchDelete() {
+  if (selectedCards.value.length === 0)
+    return
+
+  const codes = [...selectedCards.value]
+  openActionConfirm(`确定删除选中的 ${codes.length} 张卡密吗？已使用卡密会自动跳过。`, () => performBatchDelete(codes))
+}
+
 function changePage(offset: number) {
   const nextPage = Math.min(totalPages.value, Math.max(1, page.value + offset))
   page.value = nextPage
@@ -558,7 +591,8 @@ async function copyText(text: string, message: string) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text)
-    } else {
+    }
+    else {
       const textarea = document.createElement('textarea')
       textarea.value = text
       textarea.style.position = 'fixed'
@@ -655,7 +689,7 @@ function toneClass(tone: string) {
 </script>
 
 <template>
-  <div class="space-y-6 p-6">
+  <div class="p-6 space-y-6">
     <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <h1 class="glass-text-main text-2xl font-bold">
@@ -678,7 +712,7 @@ function toneClass(tone: string) {
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
       <div class="glass-panel rounded-2xl p-4 shadow-sm">
-        <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+        <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
           总卡密
         </p>
         <p class="glass-text-main mt-3 text-3xl font-semibold">
@@ -689,7 +723,7 @@ function toneClass(tone: string) {
         </p>
       </div>
       <div class="glass-panel rounded-2xl p-4 shadow-sm">
-        <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+        <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
           待使用 / 禁用
         </p>
         <p class="glass-text-main mt-3 text-3xl font-semibold">
@@ -700,7 +734,7 @@ function toneClass(tone: string) {
         </p>
       </div>
       <div class="glass-panel rounded-2xl p-4 shadow-sm">
-        <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+        <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
           已使用
         </p>
         <p class="glass-text-main mt-3 text-3xl font-semibold">
@@ -711,7 +745,7 @@ function toneClass(tone: string) {
         </p>
       </div>
       <div class="glass-panel rounded-2xl p-4 shadow-sm">
-        <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+        <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
           过期 / 永久
         </p>
         <p class="glass-text-main mt-3 text-3xl font-semibold">
@@ -722,7 +756,7 @@ function toneClass(tone: string) {
         </p>
       </div>
       <div class="glass-panel rounded-2xl p-4 shadow-sm">
-        <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+        <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
           批次 / 体验卡
         </p>
         <p class="glass-text-main mt-3 text-3xl font-semibold">
@@ -839,32 +873,32 @@ function toneClass(tone: string) {
                 <input
                   type="checkbox"
                   :checked="allVisibleSelected"
-                  class="h-4 w-4 rounded border-black/10 bg-black/5 text-primary-600 dark:border-white/20 dark:bg-black/40 focus:ring-primary-500"
+                  class="h-4 w-4 border-black/10 rounded bg-black/5 text-primary-600 dark:border-white/20 dark:bg-black/40 focus:ring-primary-500"
                   @change="toggleSelectAllVisible"
                 >
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 卡密 / 批次
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 描述 / 备注
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 类型 / 时长
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 来源 / 渠道
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 状态
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 使用情况
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 创建信息
               </th>
-              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+              <th class="glass-text-muted px-4 py-3 text-left text-xs font-medium tracking-wider uppercase">
                 操作
               </th>
             </tr>
@@ -888,7 +922,7 @@ function toneClass(tone: string) {
                   v-model="selectedCards"
                   type="checkbox"
                   :value="card.code"
-                  class="h-4 w-4 rounded border-black/10 bg-black/5 text-primary-600 dark:border-white/20 dark:bg-black/40 focus:ring-primary-500"
+                  class="h-4 w-4 border-black/10 rounded bg-black/5 text-primary-600 dark:border-white/20 dark:bg-black/40 focus:ring-primary-500"
                 >
               </td>
 
@@ -1032,6 +1066,21 @@ function toneClass(tone: string) {
     </div>
 
     <ConfirmModal
+      v-model:show="showActionConfirmModal"
+      title="确认操作"
+      confirm-text="确认"
+      cancel-text="取消"
+      :show-cancel="true"
+      :loading="actionConfirmLoading"
+      @confirm="confirmAction"
+      @cancel="closeActionConfirm"
+    >
+      <div class="text-left text-sm leading-6">
+        {{ actionConfirmMessage }}
+      </div>
+    </ConfirmModal>
+
+    <ConfirmModal
       v-model:show="showGenerateModal"
       title="生成卡密"
       confirm-text="开始生成"
@@ -1041,7 +1090,7 @@ function toneClass(tone: string) {
       @confirm="generateCards"
       @cancel="showGenerateModal = false"
     >
-      <div class="space-y-4 text-left">
+      <div class="text-left space-y-4">
         <BaseInput
           v-model="newCard.description"
           label="描述"
@@ -1080,7 +1129,7 @@ function toneClass(tone: string) {
               复制全部
             </BaseButton>
           </div>
-          <div class="max-h-48 space-y-2 overflow-y-auto rounded-xl bg-black/5 p-3 dark:bg-white/5">
+          <div class="max-h-48 overflow-y-auto rounded-xl bg-black/5 p-3 space-y-2 dark:bg-white/5">
             <div
               v-for="card in generatedCards"
               :key="card.code"
@@ -1110,7 +1159,7 @@ function toneClass(tone: string) {
       @confirm="saveEdit"
       @cancel="showEditModal = false"
     >
-      <div v-if="editingCard" class="space-y-4 text-left">
+      <div v-if="editingCard" class="text-left space-y-4">
         <div class="rounded-xl bg-black/5 p-3 text-xs dark:bg-white/5">
           <div class="glass-text-muted">
             卡密编码
@@ -1146,7 +1195,7 @@ function toneClass(tone: string) {
           <input
             v-model="editCardForm.enabled"
             type="checkbox"
-            class="h-4 w-4 rounded border-black/10 text-primary-600 focus:ring-primary-500 dark:border-white/20"
+            class="h-4 w-4 border-black/10 rounded text-primary-600 dark:border-white/20 focus:ring-primary-500"
             :disabled="!editingCard.canToggleEnabled"
           >
           <span class="glass-text-main">允许兑换</span>
@@ -1164,7 +1213,7 @@ function toneClass(tone: string) {
       <div v-if="showDetailModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showDetailModal = false" />
 
-        <div class="glass-panel relative max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-3xl shadow-2xl">
+        <div class="glass-panel relative max-h-[88vh] max-w-5xl w-full overflow-hidden rounded-3xl shadow-2xl">
           <div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
             <div>
               <h3 class="glass-text-main text-xl font-semibold">
@@ -1187,10 +1236,10 @@ function toneClass(tone: string) {
             <div v-else-if="detailCard" class="space-y-6">
               <div class="grid gap-4 lg:grid-cols-3">
                 <div class="glass-panel rounded-2xl p-4">
-                  <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+                  <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
                     基础信息
                   </p>
-                  <div class="glass-text-main mt-4 space-y-3 text-sm">
+                  <div class="glass-text-main mt-4 text-sm space-y-3">
                     <div>
                       <span class="glass-text-muted">卡密：</span>
                       <code class="ml-2 rounded bg-black/5 px-2 py-1 font-mono dark:bg-white/10">{{ detailCard.code }}</code>
@@ -1215,10 +1264,10 @@ function toneClass(tone: string) {
                 </div>
 
                 <div class="glass-panel rounded-2xl p-4">
-                  <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+                  <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
                     归属与来源
                   </p>
-                  <div class="glass-text-main mt-4 space-y-3 text-sm">
+                  <div class="glass-text-main mt-4 text-sm space-y-3">
                     <div>
                       <span class="glass-text-muted">状态：</span>
                       <span class="ml-2 rounded-full px-2 py-1 text-xs font-medium" :class="toneClass(detailCard.statusTone)">
@@ -1249,10 +1298,10 @@ function toneClass(tone: string) {
                 </div>
 
                 <div class="glass-panel rounded-2xl p-4">
-                  <p class="glass-text-muted text-xs uppercase tracking-[0.2em]">
+                  <p class="glass-text-muted text-xs tracking-[0.2em] uppercase">
                     使用信息
                   </p>
-                  <div class="glass-text-main mt-4 space-y-3 text-sm">
+                  <div class="glass-text-main mt-4 text-sm space-y-3">
                     <div>
                       <span class="glass-text-muted">兑换状态：</span>
                       <span class="ml-2">{{ detailCard.canToggleEnabled ? (detailCard.enabled ? '可兑换' : '不可兑换') : '历史卡密' }}</span>
@@ -1304,7 +1353,7 @@ function toneClass(tone: string) {
                   <div
                     v-for="log in detailLogs"
                     :key="log.id"
-                    class="rounded-2xl border border-white/10 bg-black/5 p-4 dark:bg-white/5"
+                    class="border border-white/10 rounded-2xl bg-black/5 p-4 dark:bg-white/5"
                   >
                     <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                       <div class="flex flex-wrap items-center gap-2">
@@ -1325,7 +1374,7 @@ function toneClass(tone: string) {
                       {{ log.remark }}
                     </p>
 
-                    <div class="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div class="grid mt-3 gap-3 lg:grid-cols-2">
                       <div class="rounded-xl bg-black/5 p-3 dark:bg-white/5">
                         <p class="glass-text-muted text-xs">
                           变更前

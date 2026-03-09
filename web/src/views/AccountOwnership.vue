@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
-type AccountItem = {
+interface AccountItem {
   id: string
   name?: string
   nick?: string
@@ -20,7 +20,7 @@ type AccountItem = {
   connected?: boolean
 }
 
-type UserItem = {
+interface UserItem {
   username: string
   role: string
 }
@@ -289,7 +289,7 @@ onMounted(() => {
     <div class="glass-panel overflow-hidden rounded-2xl">
       <div class="border-b border-gray-200/70 px-4 py-3 dark:border-white/10">
         <div class="text-sm text-gray-500 dark:text-gray-400">
-          当前管理员：<span class="font-semibold text-gray-900 dark:text-gray-100">{{ currentUsername || '未识别' }}</span>
+          当前管理员：<span class="text-gray-900 font-semibold dark:text-gray-100">{{ currentUsername || '未识别' }}</span>
         </div>
       </div>
 
@@ -303,7 +303,7 @@ onMounted(() => {
 
       <div v-else class="overflow-x-auto">
         <table class="min-w-full text-sm">
-          <thead class="bg-black/3 text-left text-xs text-gray-500 uppercase tracking-[0.18em] dark:bg-white/5 dark:text-gray-400">
+          <thead class="bg-black/3 text-left text-xs text-gray-500 tracking-[0.18em] uppercase dark:bg-white/5 dark:text-gray-400">
             <tr>
               <th class="px-4 py-3 font-medium">
                 账号
@@ -326,7 +326,7 @@ onMounted(() => {
             <tr
               v-for="account in sortedAccounts"
               :key="account.id"
-              class="border-t border-gray-200/60 transition hover:bg-black/3 dark:border-white/8 dark:hover:bg-white/4"
+              class="border-t border-gray-200/60 transition dark:border-white/8 hover:bg-black/3 dark:hover:bg-white/4"
             >
               <td class="px-4 py-4 align-top">
                 <div class="font-semibold">

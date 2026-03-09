@@ -1341,7 +1341,7 @@ async function handleDashboardTrialRenew() {
                 <span
                   v-for="chip in getPlantingLogDetailChips(log)"
                   :key="`${log.ts}-${chip.key}`"
-                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] leading-5"
+                  class="inline-flex items-center gap-1 border rounded-full px-2 py-0.5 text-[11px] leading-5"
                   :class="getLogDetailChipClass(chip.tone)"
                 >
                   <span class="opacity-70">{{ chip.label }}</span>
