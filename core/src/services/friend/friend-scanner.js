@@ -15,7 +15,50 @@ const decision = require('./friend-decision');
 const actions = require('./friend-actions');
 const { circuitBreaker } = require('../circuit-breaker');
 const BANNED_ERROR_CODE = 1002003;
+const FRIENDS_LIST_DEBUG_LOG_TTL_MS = 5 * 60 * 1000;
+const _friendsListDebugLogCache = new Map();
+const PERIODIC_STATUS_LOG_TTL_MS = 5 * 60 * 1000;
+const _periodicStatusLogCache = new Map();
 let consecutiveErrors = 0;
+
+function _logFriendsListDebug(cacheKey, message, level = 'info') {
+    const now = Date.now();
+    const prev = _friendsListDebugLogCache.get(cacheKey);
+    if (prev && prev.message === message && (now - prev.at) < FRIENDS_LIST_DEBUG_LOG_TTL_MS) {
+        return;
+    }
+    _friendsListDebugLogCache.set(cacheKey, { message, at: now });
+    if (level === 'warn') {
+        logWarn('好友', message);
+        return;
+    }
+    log('好友', message);
+}
+
+function _logPeriodicStatus(cacheKey, message, options = {}) {
+    const {
+        level = 'info',
+        ttlMs = PERIODIC_STATUS_LOG_TTL_MS,
+        stateValue = message,
+        tag = '好友',
+        meta,
+    } = options;
+    const now = Date.now();
+    const prev = _periodicStatusLogCache.get(cacheKey);
+    if (prev && prev.stateValue === stateValue && (now - prev.at) < ttlMs) {
+        return;
+    }
+    _periodicStatusLogCache.set(cacheKey, { stateValue, at: now });
+    if (level === 'warn') {
+        logWarn(tag, message, meta);
+        return;
+    }
+    log(tag, message, meta);
+}
+
+function _clearPeriodicStatus(...keys) {
+    keys.forEach(key => _periodicStatusLogCache.delete(key));
+}
 
 async function scanAndClassifyFriends(friends, state) {
     const blacklist = new Set(getFriendBlacklist());
@@ -272,24 +315,40 @@ async function getFriendsList() {
     try {
         const reply = await actions.getAllFriends();
         const friends = reply.game_friends || [];
-        const state = getUserState();
+        const userState = getUserState();
         const platformInst = PlatformFactory.createPlatform(CONFIG.platform);
         const isWechatEnv = !platformInst.allowSyncAll();
-
-        log('好友', `[getFriendsList 调试] 从 getAllFriends 获取到 ${friends.length} 个原始好友, 当前 gid=${state.gid}`);
+        const filteredOut = [];
 
         const filtered = friends
             .filter(f => {
                 const fGid = toNum(f.gid);
-                const isSelf = fGid === state.gid;
+                const isSelf = fGid === userState.gid;
                 const isXiaoNongFu = f.name === '小小农夫' || f.remark === '小小农夫';
                 if (isSelf || isXiaoNongFu) {
-                    log('好友', `[getFriendsList 调试] 过滤掉: gid=${fGid}, name=${f.name || ''}, remark=${f.remark || ''}, 原因=${isSelf ? '自己' : '小小农夫'}`);
+                    filteredOut.push({
+                        gid: fGid,
+                        name: f.name || '',
+                        remark: f.remark || '',
+                        reason: isSelf ? '自己' : '小小农夫',
+                    });
                 }
                 return !isSelf && !isXiaoNongFu;
             });
 
-        log('好友', `[getFriendsList 调试] 过滤后剩余 ${filtered.length} 个好友 (原始=${friends.length})`);
+        _logFriendsListDebug(
+            'friends_list_summary',
+            `[getFriendsList 调试] 原始=${friends.length}, 过滤后=${filtered.length}, 当前 gid=${userState.gid}`
+        );
+        if (filteredOut.length > 0) {
+            const excludedSummary = filteredOut
+                .map(item => `gid=${item.gid}, name=${item.name}, remark=${item.remark}, 原因=${item.reason}`)
+                .join(' | ');
+            _logFriendsListDebug(
+                'friends_list_filtered',
+                `[getFriendsList 调试] 过滤掉 ${filteredOut.length} 项: ${excludedSummary}`
+            );
+        }
 
         return filtered
             .map(f => ({
@@ -314,7 +373,7 @@ async function getFriendsList() {
                 return Number(a.gid || 0) - Number(b.gid || 0);
             });
     } catch (err) {
-        logWarn('好友', `[getFriendsList 调试] 获取好友列表异常: ${err.message}`);
+        _logFriendsListDebug('friends_list_error', `[getFriendsList 调试] 获取好友列表异常: ${err.message}`, 'warn');
         return [];
     }
 }
@@ -559,14 +618,23 @@ async function checkFriends(mode = 'full') {
 
     if (state.suspendUntil && Date.now() < state.suspendUntil) {
         const resetMinutes = Math.ceil((state.suspendUntil - Date.now()) / 60000);
-        logWarn('好友', `账号风控自愈休眠中，跳过本次巡回 (剩余约 ${resetMinutes} 分钟)...`);
+        _logPeriodicStatus(
+            'friend_suspend',
+            `账号风控自愈休眠中，跳过本次巡回 (剩余约 ${resetMinutes} 分钟)...`,
+            { level: 'warn', stateValue: `bucket:${Math.ceil(resetMinutes / 5)}` }
+        );
         return false;
     }
+    _clearPeriodicStatus('friend_suspend');
 
     if (!circuitBreaker.allowRequest()) {
-        logWarn('系统', '全局断路器已开启，好友巡查被物理阻断');
+        _logPeriodicStatus('friend_circuit_breaker', '全局断路器已开启，好友巡查被物理阻断', {
+            level: 'warn',
+            tag: '系统',
+        });
         return false;
     }
+    _clearPeriodicStatus('friend_circuit_breaker');
 
     if (!isAutomationOn('friend')) return false;
 
@@ -593,11 +661,18 @@ async function checkFriends(mode = 'full') {
         const friends = friendsReply.game_friends || [];
         if (friends.length === 0) {
             if (!platformInst.allowAutoSteal() && stealEnabled) {
-                logWarn('安全', '微信环境安全降级：受限模式已生效，确认无好友可访问[不执行任何偷取与批处理]', { module: 'friend', event: 'wx_safety' });
+                _logPeriodicStatus(
+                    'friend_wx_safety',
+                    '微信环境安全降级：受限模式已生效，确认无好友可访问[不执行任何偷取与批处理]',
+                    { level: 'warn', tag: '安全', meta: { module: 'friend', event: 'wx_safety' } }
+                );
             }
-            log('好友', '没有好友', { module: 'friend', event: 'friend_scan', result: 'empty' });
+            _logPeriodicStatus('friend_no_friends', '没有好友', {
+                meta: { module: 'friend', event: 'friend_scan', result: 'empty' },
+            });
             return false;
         }
+        _clearPeriodicStatus('friend_wx_safety', 'friend_no_friends');
 
         // 三阶段模式：扫描→偷菜→帮助（通过 friend_three_phase 开关控制）
         const useThreePhase = normalizedMode === 'full' && !!isAutomationOn('friend_three_phase');

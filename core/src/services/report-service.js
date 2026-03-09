@@ -310,6 +310,12 @@ function createReportService(options = {}) {
         if (!cfg || !cfg.enabled) return false;
         if (!cfg.channel) return false;
         if (cfg.channel === 'webhook') return !!String(cfg.endpoint || '').trim();
+        if (cfg.channel === 'email') {
+            const smtpHost = String(cfg.smtpHost || '').trim();
+            const emailTo = String(cfg.emailTo || '').trim();
+            const emailFrom = String(cfg.emailFrom || cfg.smtpUser || '').trim();
+            return !!(smtpHost && emailTo && emailFrom);
+        }
         return !!String(cfg.token || '').trim();
     }
 
@@ -431,6 +437,13 @@ function createReportService(options = {}) {
             channel: reportConfig.channel,
             endpoint: reportConfig.endpoint,
             token: reportConfig.token,
+            smtpHost: reportConfig.smtpHost,
+            smtpPort: reportConfig.smtpPort,
+            smtpSecure: reportConfig.smtpSecure,
+            smtpUser: reportConfig.smtpUser,
+            smtpPass: reportConfig.smtpPass,
+            emailFrom: reportConfig.emailFrom,
+            emailTo: reportConfig.emailTo,
             title: payload.title,
             content: payload.content,
         });

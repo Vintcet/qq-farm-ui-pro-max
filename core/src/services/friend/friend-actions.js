@@ -14,7 +14,13 @@ const state = require('./friend-state');
 const scanner = require('./friend-scanner');
 const decision = require('./friend-decision');
 const BANNED_ERROR_CODE = 1002003;
-let _useGetAllMode = false;
+const FRIEND_FETCH_MODE = {
+    UNKNOWN: 'unknown',
+    SYNC_ALL: 'sync_all',
+    GET_ALL: 'get_all',
+};
+const FRIEND_FETCH_RESULT_LOG_TTL_MS = 5 * 60 * 1000;
+const _friendFetchStateByAccount = new Map();
 
 
 async function getAllFriends() {
@@ -22,29 +28,47 @@ async function getAllFriends() {
     const platformInst = PlatformFactory.createPlatform(CONFIG.platform);
     const userState = getUserState();
     const accountId = userState?.accountId || null;
+    let fetchState = _getFriendFetchState(_getFriendFetchKey(accountId));
     const forceGetAll = getForceGetAllConfig(accountId).enabled;
     const isWeChat = !platformInst.allowSyncAll();
     const label = isWeChat ? '微信' : 'QQ';
-    let usedGetAllFallback = false;
 
-    if (forceGetAll) {
-        log('好友', `强制兼容模式：跳过 SyncAll，直接使用 GetAll`);
-        reply = await _getAllViaGetAll('强制强效兼容模式');
-    } else if (_useGetAllMode) {
-        reply = await _getAllViaGetAll(`${label}兼容模式`);
-    } else {
-        reply = await _getAllViaSyncAll(isWeChat);
-        const friendCount = reply?.game_friends?.length || 0;
-        if (friendCount === 0 || (friendCount === 1 && _isSelfOnly(reply.game_friends, userState))) {
-            log('好友', `SyncAll 返回${friendCount === 0 ? '空' : '仅自己'}(${label})，降级为 GetAll`);
-            reply = await _getAllViaGetAll(`${label}兼容模式`);
-            usedGetAllFallback = true;
-        }
+    if (!forceGetAll && fetchState.modeSource === 'forced') {
+        resetGetAllMode(accountId);
+        fetchState = _getFriendFetchState(_getFriendFetchKey(accountId));
     }
 
-    if (usedGetAllFallback && !_useGetAllMode && reply?.game_friends?.length > 0) {
-        _useGetAllMode = true;
-        log('好友', `GetAll 成功获取 ${reply.game_friends.length} 个好友，后续跳过 SyncAll 直接使用 GetAll`);
+    if (forceGetAll) {
+        _setFriendFetchMode(fetchState, FRIEND_FETCH_MODE.GET_ALL, `已启用强制兼容模式，固定使用 GetAll (${label})`, 'forced');
+        reply = await _getAllViaGetAll('强制强效兼容模式', { fetchState, retryOnEmpty: false });
+    } else if (fetchState.mode === FRIEND_FETCH_MODE.GET_ALL) {
+        reply = await _getAllViaGetAll(`${label}已锁定`, { fetchState, retryOnEmpty: false });
+        if (!_hasUsableFriendEntries(reply, userState)) {
+            resetGetAllMode(accountId);
+            logWarn('好友', `已锁定 GetAll 模式，但本次返回${_describeFriendReply(reply, userState)}(${label})；已清空模式缓存，下次重新探测`);
+        }
+    } else if (fetchState.mode === FRIEND_FETCH_MODE.SYNC_ALL) {
+        reply = await _getAllViaSyncAll(isWeChat, { fetchState });
+        if (!_hasUsableFriendEntries(reply, userState)) {
+            log('好友', `已锁定 SyncAll 模式，但本次返回${_describeFriendReply(reply, userState)}(${label})，改用 GetAll 复核`);
+            reply = await _getAllViaGetAll(`${label}兼容复核`, { fetchState, retryOnEmpty: true });
+            if (_hasUsableFriendEntries(reply, userState)) {
+                _setFriendFetchMode(fetchState, FRIEND_FETCH_MODE.GET_ALL, `${label} 环境已确认使用 GetAll 更稳定`);
+            } else {
+                resetGetAllMode(accountId);
+            }
+        }
+    } else {
+        reply = await _getAllViaSyncAll(isWeChat, { fetchState });
+        if (_hasUsableFriendEntries(reply, userState)) {
+            _setFriendFetchMode(fetchState, FRIEND_FETCH_MODE.SYNC_ALL, `${label} 环境首轮探测通过，后续固定使用 SyncAll`);
+        } else {
+            log('好友', `首次探测：SyncAll 返回${_describeFriendReply(reply, userState)}(${label})，改用 GetAll 复核`);
+            reply = await _getAllViaGetAll(`${label}兼容探测`, { fetchState, retryOnEmpty: true });
+            if (_hasUsableFriendEntries(reply, userState)) {
+                _setFriendFetchMode(fetchState, FRIEND_FETCH_MODE.GET_ALL, `${label} 环境首轮探测确认需使用 GetAll`);
+            }
+        }
     }
 
     if (reply && reply.game_friends && networkEvents) {
@@ -54,12 +78,19 @@ async function getAllFriends() {
     return reply;
 }
 
-function resetGetAllMode() {
-    _useGetAllMode = false;
+function resetGetAllMode(accountId = null) {
+    if (accountId !== null && accountId !== undefined) {
+        _friendFetchStateByAccount.delete(_getFriendFetchKey(accountId));
+        return;
+    }
+    _friendFetchStateByAccount.clear();
 }
 
 function isGetAllMode() {
-    return _useGetAllMode;
+    const userState = getUserState();
+    const accountId = userState?.accountId || null;
+    const fetchState = _friendFetchStateByAccount.get(_getFriendFetchKey(accountId));
+    return fetchState?.mode === FRIEND_FETCH_MODE.GET_ALL;
 }
 
 function _isSelfOnly(friends, userState) {
@@ -68,17 +99,74 @@ function _isSelfOnly(friends, userState) {
     return selfGid > 0 && toNum(friends[0].gid) === selfGid;
 }
 
-async function _getAllViaSyncAll(isWeChat) {
+function _getFriendFetchState(accountId) {
+    if (!_friendFetchStateByAccount.has(accountId)) {
+        _friendFetchStateByAccount.set(accountId, {
+            mode: FRIEND_FETCH_MODE.UNKNOWN,
+            lastResultKey: '',
+            lastResultAt: 0,
+            modeReason: '',
+            modeSource: 'probe',
+        });
+    }
+    return _friendFetchStateByAccount.get(accountId);
+}
+
+function _getFriendFetchKey(accountId) {
+    return accountId || '__default__';
+}
+
+function _setFriendFetchMode(fetchState, mode, reason, source = 'probe') {
+    const changed = fetchState.mode !== mode || fetchState.modeReason !== reason || fetchState.modeSource !== source;
+    fetchState.mode = mode;
+    fetchState.modeReason = reason;
+    fetchState.modeSource = source;
+    if (!changed) return;
+    const modeLabel = mode === FRIEND_FETCH_MODE.GET_ALL ? 'GetAll' : 'SyncAll';
+    log('好友', `好友拉取模式已锁定为 ${modeLabel}：${reason}`);
+}
+
+function _hasUsableFriendEntries(reply, userState) {
+    const friends = Array.isArray(reply?.game_friends) ? reply.game_friends : [];
+    if (friends.length === 0) return false;
+    return !(friends.length === 1 && _isSelfOnly(friends, userState));
+}
+
+function _describeFriendReply(reply, userState) {
+    const friends = Array.isArray(reply?.game_friends) ? reply.game_friends : [];
+    if (friends.length === 0) return '空';
+    if (friends.length === 1 && _isSelfOnly(friends, userState)) return '仅自己';
+    return `${friends.length} 个好友`;
+}
+
+function _logFriendFetchResult(methodName, modeName, reply, fetchState) {
+    const friendCount = reply?.game_friends ? reply.game_friends.length : 0;
+    const invCount = reply?.invitations ? reply.invitations.length : 0;
+    const appCount = toNum(reply?.application_count);
+    const summaryKey = `${methodName}:${modeName}:${friendCount}:${invCount}:${appCount}`;
+    const now = Date.now();
+
+    if (fetchState && fetchState.lastResultKey === summaryKey && (now - fetchState.lastResultAt) < FRIEND_FETCH_RESULT_LOG_TTL_MS) {
+        return;
+    }
+
+    if (fetchState) {
+        fetchState.lastResultKey = summaryKey;
+        fetchState.lastResultAt = now;
+    }
+
+    log('好友', `${methodName} 结果(${modeName}): game_friends=${friendCount}, invitations=${invCount}, application_count=${appCount}`);
+}
+
+async function _getAllViaSyncAll(isWeChat, options = {}) {
     const label = isWeChat ? '微信' : 'QQ';
+    const fetchState = options.fetchState || null;
     try {
         const requestObj = types.SyncAllFriendsRequest.create({ open_ids: [] });
         const body = types.SyncAllFriendsRequest.encode(requestObj).finish();
         const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'SyncAll', body);
         const reply = types.SyncAllFriendsReply.decode(replyBody);
-        const friendCount = reply.game_friends ? reply.game_friends.length : 0;
-        const invCount = reply.invitations ? reply.invitations.length : 0;
-        const appCount = toNum(reply.application_count);
-        log('好友', `SyncAll 结果(${label}): game_friends=${friendCount}, invitations=${invCount}, application_count=${appCount}`);
+        _logFriendFetchResult('SyncAll', label, reply, fetchState);
         return reply;
     } catch (syncErr) {
         const errMsg = syncErr.message || '';
@@ -91,9 +179,11 @@ async function _getAllViaSyncAll(isWeChat) {
     }
 }
 
-async function _getAllViaGetAll(modeName) {
+async function _getAllViaGetAll(modeName, options = {}) {
     let reply;
-    const maxRetries = 2;
+    const fetchState = options.fetchState || null;
+    const retryOnEmpty = options.retryOnEmpty !== false;
+    const maxRetries = retryOnEmpty ? 2 : 0;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
         const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body);
@@ -101,10 +191,7 @@ async function _getAllViaGetAll(modeName) {
         try {
             reply = types.GetAllFriendsReply.decode(replyBody);
             if (attempt === 0 && reply) {
-                const friendCount = reply.game_friends ? reply.game_friends.length : 0;
-                const invCount = reply.invitations ? reply.invitations.length : 0;
-                const appCount = toNum(reply.application_count);
-                log('好友', `GetAll 结果(${modeName}): game_friends=${friendCount}, invitations=${invCount}, application_count=${appCount}`);
+                _logFriendFetchResult('GetAll', modeName, reply, fetchState);
             }
             if (reply && reply.game_friends && reply.game_friends.length > 0) {
                 break;

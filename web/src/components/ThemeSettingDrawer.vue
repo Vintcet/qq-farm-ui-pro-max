@@ -2,7 +2,7 @@
 
 <script setup lang="ts">
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import { getThemeBackgroundPreset, THEME_OPTIONS } from '@/constants/ui-appearance'
+import { getThemeAppearanceConfig, THEME_OPTIONS } from '@/constants/ui-appearance'
 import { useAppStore } from '@/stores/app'
 
 defineProps<{
@@ -19,16 +19,10 @@ function changeTheme(themeKey: string) {
 }
 
 function applyThemeBackground(themeKey: string) {
-  const preset = getThemeBackgroundPreset(themeKey)
-  appStore.setUIConfig({
-    colorTheme: themeKey,
-    loginBackground: preset.url,
-    backgroundScope: 'login_and_app',
-    loginBackgroundOverlayOpacity: preset.overlayOpacity,
-    loginBackgroundBlur: preset.blur,
-    appBackgroundOverlayOpacity: preset.appOverlayOpacity,
-    appBackgroundBlur: preset.appBlur,
-  })
+  appStore.setUIConfig(getThemeAppearanceConfig(
+    themeKey,
+    appStore.backgroundScope === 'global' ? 'global' : 'login_and_app',
+  ))
 }
 </script>
 
@@ -123,6 +117,9 @@ function applyThemeBackground(themeKey: string) {
           <h3 class="glass-text-muted relative z-10 mx-auto mb-4 w-max rounded-lg bg-transparent px-2 text-center text-[13px] font-medium backdrop-blur-md -mt-5">
             系统主题 (预设变体)
           </h3>
+          <p class="glass-text-muted mb-4 text-center text-[11px] leading-5">
+            {{ appStore.themeBackgroundLinked ? '已开启主题锁定背景，直接切主题也会自动同步背景。' : '可单独切主题，也可点右下角按钮一并套用同主题背景。' }}
+          </p>
           <div class="grid grid-cols-1 gap-4">
             <template v-for="t in THEME_OPTIONS" :key="t.key">
               <div

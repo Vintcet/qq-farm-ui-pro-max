@@ -4,6 +4,7 @@ const { Buffer } = require('node:buffer');
  * 当前实现：自动购买有机化肥（item_id=1012）
  */
 
+const { getItemById, getItemImageById } = require('../config/gameConfig');
 const { sendMsgAsync, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toNum, log, sleep } = require('../utils/utils');
@@ -106,8 +107,32 @@ function parseMallIntList(bytesField) {
     return values;
 }
 
+function buildMallItemPreviews(itemIds = []) {
+    return (Array.isArray(itemIds) ? itemIds : [])
+        .filter(itemId => Number(itemId) > 0)
+        .map((itemId) => {
+            const item = getItemById(itemId) || {};
+            return {
+                id: Number(itemId) || 0,
+                name: String(item.name || `物品#${Number(itemId) || 0}`),
+                image: getItemImageById(itemId),
+                type: Number(item.type) || 0,
+                rarity: Number(item.rarity) || 0,
+                desc: String(item.desc || ''),
+                effectDesc: String(item.effectDesc || ''),
+                canUse: Number(item.can_use) === 1,
+                level: Number(item.level) || 0,
+                price: Number(item.price) || 0,
+                interactionType: String(item.interaction_type || ''),
+            };
+        });
+}
+
 function normalizeMallGoods(goods, slotType = 1) {
     const row = goods || {};
+    const itemIds = parseMallIntList(row.item_ids);
+    const itemPreviews = buildMallItemPreviews(itemIds);
+    const primaryItem = itemPreviews.find(item => !!item.image) || itemPreviews[0] || null;
     return {
         goodsId: toNum(row.goods_id),
         name: String(row.name || `商品#${toNum(row.goods_id)}`),
@@ -117,7 +142,11 @@ function normalizeMallGoods(goods, slotType = 1) {
         isLimited: row.is_limited === true,
         discount: String(row.discount || ''),
         priceValue: parseMallPriceValue(row.price),
-        itemIds: parseMallIntList(row.item_ids),
+        itemIds,
+        image: primaryItem ? String(primaryItem.image || '') : '',
+        primaryItemId: primaryItem ? Number(primaryItem.id || 0) : 0,
+        summary: primaryItem ? String(primaryItem.effectDesc || primaryItem.desc || '') : '',
+        itemPreviews,
     };
 }
 

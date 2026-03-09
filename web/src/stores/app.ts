@@ -2,14 +2,29 @@ import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api from '@/api'
+import { getThemeAppearanceConfig, getWorkspaceAppearanceConfig } from '@/constants/ui-appearance'
 
 const THEME_KEY = 'ui_theme'
 const DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY = 30
 const DEFAULT_LOGIN_BACKGROUND_BLUR = 2
-const DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY = 60
-const DEFAULT_APP_BACKGROUND_BLUR = 8
+const DEFAULT_WORKSPACE_VISUAL_CONFIG = getWorkspaceAppearanceConfig('console')
+const DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY = DEFAULT_WORKSPACE_VISUAL_CONFIG.appBackgroundOverlayOpacity
+const DEFAULT_APP_BACKGROUND_BLUR = DEFAULT_WORKSPACE_VISUAL_CONFIG.appBackgroundBlur
 type ThemeMode = 'light' | 'dark' | 'auto'
 type BackgroundScope = 'login_only' | 'login_and_app' | 'global'
+interface UIConfigInput {
+  theme?: ThemeMode
+  loginBackground?: string
+  backgroundScope?: BackgroundScope
+  loginBackgroundOverlayOpacity?: number
+  loginBackgroundBlur?: number
+  workspaceVisualPreset?: 'console' | 'poster' | 'pure_glass'
+  appBackgroundOverlayOpacity?: number
+  appBackgroundBlur?: number
+  colorTheme?: string
+  performanceMode?: boolean
+  themeBackgroundLinked?: boolean
+}
 
 function clampUiNumber(value: unknown, fallback: number, min: number, max: number) {
   const num = Number(value)
@@ -109,8 +124,10 @@ export const useAppStore = defineStore('app', () => {
   const backgroundScope = useStorage<BackgroundScope>('background_scope', 'login_only')
   const loginBackgroundOverlayOpacity = useStorage('login_background_overlay_opacity', DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY)
   const loginBackgroundBlur = useStorage('login_background_blur', DEFAULT_LOGIN_BACKGROUND_BLUR)
+  const workspaceVisualPreset = useStorage<'console' | 'poster' | 'pure_glass'>('workspace_visual_preset', 'console')
   const appBackgroundOverlayOpacity = useStorage('app_background_overlay_opacity', DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY)
   const appBackgroundBlur = useStorage('app_background_blur', DEFAULT_APP_BACKGROUND_BLUR)
+  const themeBackgroundLinked = useStorage('theme_background_linked', false)
 
   // 最终的深色状态（对外暴露）
   const isDark = computed(() => {
@@ -186,10 +203,12 @@ export const useAppStore = defineStore('app', () => {
           backgroundScope: bgScope,
           loginBackgroundOverlayOpacity: overlayOpacity,
           loginBackgroundBlur: blur,
+          workspaceVisualPreset: visualPreset,
           appBackgroundOverlayOpacity: appOverlayOpacity,
           appBackgroundBlur: appBlur,
           colorTheme: ct,
           performanceMode: pm,
+          themeBackgroundLinked: linkedThemeBackground,
           timestamp: svrTimestamp,
         } = res.data.data
 
@@ -220,6 +239,9 @@ export const useAppStore = defineStore('app', () => {
         if (blur !== undefined) {
           loginBackgroundBlur.value = clampUiNumber(blur, DEFAULT_LOGIN_BACKGROUND_BLUR, 0, 12)
         }
+        if (visualPreset !== undefined && ['console', 'poster', 'pure_glass'].includes(visualPreset)) {
+          workspaceVisualPreset.value = visualPreset as 'console' | 'poster' | 'pure_glass'
+        }
         if (appOverlayOpacity !== undefined) {
           appBackgroundOverlayOpacity.value = clampUiNumber(appOverlayOpacity, DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY, 20, 90)
         }
@@ -232,6 +254,9 @@ export const useAppStore = defineStore('app', () => {
         if (pm !== undefined) {
           performanceMode.value = !!pm
         }
+        if (linkedThemeBackground !== undefined) {
+          themeBackgroundLinked.value = !!linkedThemeBackground
+        }
       }
     }
     catch {
@@ -239,52 +264,87 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function setUIConfig(config: {
-    theme?: ThemeMode
-    loginBackground?: string
-    backgroundScope?: BackgroundScope
-    loginBackgroundOverlayOpacity?: number
-    loginBackgroundBlur?: number
-    appBackgroundOverlayOpacity?: number
-    appBackgroundBlur?: number
-    colorTheme?: string
-    performanceMode?: boolean
-  }) {
+  function resolveLinkedThemeConfig(config: UIConfigInput): UIConfigInput {
+    const nextThemeBackgroundLinked = config.themeBackgroundLinked !== undefined
+      ? !!config.themeBackgroundLinked
+      : themeBackgroundLinked.value
+
+    const shouldApplyLinkedBundle = nextThemeBackgroundLinked
+      && (config.colorTheme !== undefined || config.themeBackgroundLinked === true)
+
+    if (!shouldApplyLinkedBundle) {
+      return { ...config, themeBackgroundLinked: nextThemeBackgroundLinked }
+    }
+
+    const nextThemeKey = config.colorTheme !== undefined ? config.colorTheme : colorTheme.value
+    const nextBackgroundScope = config.backgroundScope !== undefined
+      ? config.backgroundScope
+      : (backgroundScope.value === 'global' ? 'global' : 'login_and_app')
+
+    return {
+      ...getThemeAppearanceConfig(nextThemeKey, nextBackgroundScope),
+      ...config,
+      themeBackgroundLinked: nextThemeBackgroundLinked,
+    }
+  }
+
+  function resolveWorkspaceVisualConfig(config: UIConfigInput): UIConfigInput {
+    if (config.workspaceVisualPreset === undefined) {
+      return config
+    }
+
+    const presetConfig = getWorkspaceAppearanceConfig(config.workspaceVisualPreset)
+
+    return {
+      ...config,
+      appBackgroundOverlayOpacity: config.appBackgroundOverlayOpacity ?? presetConfig.appBackgroundOverlayOpacity,
+      appBackgroundBlur: config.appBackgroundBlur ?? presetConfig.appBackgroundBlur,
+    }
+  }
+
+  async function setUIConfig(config: UIConfigInput) {
     try {
+      const resolvedConfig = resolveWorkspaceVisualConfig(resolveLinkedThemeConfig(config))
       const newTimestamp = Date.now()
-      await api.post('/api/settings/theme', { ...config, timestamp: newTimestamp })
+      await api.post('/api/settings/theme', { ...resolvedConfig, timestamp: newTimestamp })
 
       // 更新本地写入时间戳
       uiTimestamp.value = newTimestamp
 
-      if (config.theme) {
-        themeMode.value = config.theme
-        localStorage.setItem(THEME_KEY, config.theme)
+      if (resolvedConfig.theme) {
+        themeMode.value = resolvedConfig.theme
+        localStorage.setItem(THEME_KEY, resolvedConfig.theme)
       }
-      if (config.loginBackground !== undefined) {
-        loginBackground.value = config.loginBackground
-        localStorage.setItem('login_background', config.loginBackground)
+      if (resolvedConfig.loginBackground !== undefined) {
+        loginBackground.value = resolvedConfig.loginBackground
+        localStorage.setItem('login_background', resolvedConfig.loginBackground)
       }
-      if (config.backgroundScope !== undefined) {
-        backgroundScope.value = config.backgroundScope
+      if (resolvedConfig.backgroundScope !== undefined) {
+        backgroundScope.value = resolvedConfig.backgroundScope
       }
-      if (config.loginBackgroundOverlayOpacity !== undefined) {
-        loginBackgroundOverlayOpacity.value = clampUiNumber(config.loginBackgroundOverlayOpacity, DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY, 0, 80)
+      if (resolvedConfig.loginBackgroundOverlayOpacity !== undefined) {
+        loginBackgroundOverlayOpacity.value = clampUiNumber(resolvedConfig.loginBackgroundOverlayOpacity, DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY, 0, 80)
       }
-      if (config.loginBackgroundBlur !== undefined) {
-        loginBackgroundBlur.value = clampUiNumber(config.loginBackgroundBlur, DEFAULT_LOGIN_BACKGROUND_BLUR, 0, 12)
+      if (resolvedConfig.loginBackgroundBlur !== undefined) {
+        loginBackgroundBlur.value = clampUiNumber(resolvedConfig.loginBackgroundBlur, DEFAULT_LOGIN_BACKGROUND_BLUR, 0, 12)
       }
-      if (config.appBackgroundOverlayOpacity !== undefined) {
-        appBackgroundOverlayOpacity.value = clampUiNumber(config.appBackgroundOverlayOpacity, DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY, 20, 90)
+      if (resolvedConfig.workspaceVisualPreset !== undefined) {
+        workspaceVisualPreset.value = resolvedConfig.workspaceVisualPreset
       }
-      if (config.appBackgroundBlur !== undefined) {
-        appBackgroundBlur.value = clampUiNumber(config.appBackgroundBlur, DEFAULT_APP_BACKGROUND_BLUR, 0, 18)
+      if (resolvedConfig.appBackgroundOverlayOpacity !== undefined) {
+        appBackgroundOverlayOpacity.value = clampUiNumber(resolvedConfig.appBackgroundOverlayOpacity, DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY, 20, 90)
       }
-      if (config.colorTheme !== undefined) {
-        colorTheme.value = config.colorTheme
+      if (resolvedConfig.appBackgroundBlur !== undefined) {
+        appBackgroundBlur.value = clampUiNumber(resolvedConfig.appBackgroundBlur, DEFAULT_APP_BACKGROUND_BLUR, 0, 18)
       }
-      if (config.performanceMode !== undefined) {
-        performanceMode.value = config.performanceMode
+      if (resolvedConfig.colorTheme !== undefined) {
+        colorTheme.value = resolvedConfig.colorTheme
+      }
+      if (resolvedConfig.performanceMode !== undefined) {
+        performanceMode.value = resolvedConfig.performanceMode
+      }
+      if (resolvedConfig.themeBackgroundLinked !== undefined) {
+        themeBackgroundLinked.value = !!resolvedConfig.themeBackgroundLinked
       }
     }
     catch (e) {
@@ -368,11 +428,13 @@ export const useAppStore = defineStore('app', () => {
     themeMode,
     colorTheme,
     performanceMode,
+    themeBackgroundLinked,
     themeChartPalette,
     loginBackground,
     backgroundScope,
     loginBackgroundOverlayOpacity,
     loginBackgroundBlur,
+    workspaceVisualPreset,
     appBackgroundOverlayOpacity,
     appBackgroundBlur,
     toggleDark,

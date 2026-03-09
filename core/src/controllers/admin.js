@@ -15,7 +15,7 @@ const { Server: SocketIOServer } = require('socket.io');
 const { version } = require('../../package.json');
 const { CONFIG } = require('../config/config');
 const { getLevelExpProgress } = require('../config/gameConfig');
-const { ensureDataDir, getResourcePath } = require('../config/runtime-paths');
+const { ensureDataDir, ensureAssetCacheDir, getResourcePath } = require('../config/runtime-paths');
 const store = require('../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef, normalizeAccountRef, resolveAccountId } = require('../services/account-resolver');
@@ -24,11 +24,13 @@ const { getPool } = require('../services/mysql-db');
 const { getAnnouncements, saveAnnouncement, deleteAnnouncement, getReportLogs, getReportLogStats, exportReportLogs, deleteReportLogsByIds, clearReportLogs } = require('../services/database');
 const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
+const { cleanupUiBackgrounds } = require('../services/ui-assets');
 const { validateSettings } = require('../services/config-validator');
 const security = require('../services/security');
 const userStore = require('../models/user-store');
 const usersController = require('./users');
 const cardsController = require('./cards');
+const aiStatusRouter = require('./aiStatus');
 const { validateUsername, validatePassword, validateCardCode } = require('../utils/validators');
 const accountRepository = require('../repositories/account-repository');
 const jwtService = require('../services/jwt-service');
@@ -44,6 +46,22 @@ function ensureUiBackgroundDir() {
     const dir = path.join(ensureDataDir(), 'ui-backgrounds');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     return dir;
+}
+
+function runUiBackgroundCleanup(extraUrls = []) {
+    try {
+        const ui = typeof store.getUI === 'function' ? store.getUI() : {};
+        const result = cleanupUiBackgrounds({
+            dirPath: ensureUiBackgroundDir(),
+            activeBackgroundUrl: ui.loginBackground || '',
+            pendingBackgroundUrls: Array.isArray(extraUrls) ? extraUrls : [],
+        });
+        if (result.deleted.length > 0) {
+            adminLogger.info(`已清理未引用背景文件 ${result.deleted.length} 个`);
+        }
+    } catch (e) {
+        adminLogger.warn(`清理背景文件失败: ${e.message}`);
+    }
 }
 
 async function getAccountsSnapshot(options = {}) {
@@ -239,6 +257,8 @@ function startAdminServer(dataProvider) {
         next();
     };
 
+    app.use('/api/ai', authRequired, userRequired, aiStatusRouter);
+
     // 账号所有权验证中间件
     const accountOwnershipRequired = async (req, res, next) => {
         const accountId = req.headers['x-account-id'] || req.params.id;
@@ -301,6 +321,8 @@ function startAdminServer(dataProvider) {
     }
     app.use('/ui-backgrounds', express.static(ensureUiBackgroundDir()));
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
+    app.use('/asset-cache', express.static(ensureAssetCacheDir()));
+    runUiBackgroundCleanup();
 
     // 登录与鉴权 - 支持多用户 + PBKDF2 + 登录锁定
     app.post('/api/login', async (req, res) => {
@@ -360,7 +382,7 @@ function startAdminServer(dataProvider) {
                 },
             });
         } catch (err) {
-            logger.error('Login error:', err.message);
+            adminLogger.error(`Login error: ${err.message}`);
             return res.status(500).json({ ok: false, error: 'Server error' });
         }
     });
@@ -383,7 +405,7 @@ function startAdminServer(dataProvider) {
 
             res.json({ ok: true });
         } catch (err) {
-            logger.error('Token refresh error:', err.message);
+            adminLogger.error(`Token refresh error: ${err.message}`);
             return res.status(500).json({ ok: false, error: 'Server error' });
         }
     });
@@ -393,7 +415,7 @@ function startAdminServer(dataProvider) {
             const refreshToken = req.cookies?.refresh_token;
             if (refreshToken) await jwtService.revokeRefreshToken(refreshToken);
         } catch (err) {
-            logger.error('Logout error:', err.message);
+            adminLogger.error(`Logout error: ${err.message}`);
         }
         jwtService.clearTokenCookies(req, res);
         res.json({ ok: true });
@@ -569,7 +591,7 @@ function startAdminServer(dataProvider) {
             const refreshToken = req.cookies?.refresh_token;
             if (refreshToken) await jwtService.revokeRefreshToken(refreshToken);
         } catch (err) {
-            logger.error('Legacy logout error:', err.message);
+            adminLogger.error(`Legacy logout error: ${err.message}`);
         }
         jwtService.clearTokenCookies(req, res);
         res.json({ ok: true });
@@ -866,6 +888,25 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    app.post('/api/bag/use', accountOwnershipRequired, async (req, res) => {
+        const id = await getAccId(req);
+        if (!id) return res.status(400).json({ ok: false });
+        try {
+            const itemId = Number((req.body || {}).itemId || 0);
+            const count = Math.max(1, Number((req.body || {}).count || 1));
+            const landIds = Array.isArray((req.body || {}).landIds) ? req.body.landIds.map(v => Number(v || 0)).filter(v => v > 0) : [];
+            if (itemId <= 0) {
+                return res.status(400).json({ ok: false, error: 'Missing itemId' });
+            }
+            const data = await provider.useBagItem(id, itemId, count, landIds);
+            const { formatUseResult } = require('../services/warehouse');
+            const formatted = formatUseResult(data, { itemId, count, landIds });
+            res.json({ ok: true, data: formatted });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     app.get('/api/mall/goods', accountOwnershipRequired, async (req, res) => {
         const id = await getAccId(req);
         if (!id) return res.status(400).json({ ok: false });
@@ -1157,17 +1198,21 @@ function startAdminServer(dataProvider) {
             if (req.body.backgroundScope !== undefined) uiUpdates.backgroundScope = req.body.backgroundScope;
             if (req.body.loginBackgroundOverlayOpacity !== undefined) uiUpdates.loginBackgroundOverlayOpacity = req.body.loginBackgroundOverlayOpacity;
             if (req.body.loginBackgroundBlur !== undefined) uiUpdates.loginBackgroundBlur = req.body.loginBackgroundBlur;
+            if (req.body.workspaceVisualPreset !== undefined) uiUpdates.workspaceVisualPreset = req.body.workspaceVisualPreset;
             if (req.body.appBackgroundOverlayOpacity !== undefined) uiUpdates.appBackgroundOverlayOpacity = req.body.appBackgroundOverlayOpacity;
             if (req.body.appBackgroundBlur !== undefined) uiUpdates.appBackgroundBlur = req.body.appBackgroundBlur;
             if (req.body.colorTheme !== undefined) uiUpdates.colorTheme = req.body.colorTheme;
             if (req.body.performanceMode !== undefined) uiUpdates.performanceMode = req.body.performanceMode;
+            if (req.body.themeBackgroundLinked !== undefined) uiUpdates.themeBackgroundLinked = req.body.themeBackgroundLinked;
             if (req.body.timestamp !== undefined) uiUpdates.timestamp = req.body.timestamp;
 
             if (Object.keys(uiUpdates).length > 0) {
                 store.applyConfigSnapshot({ ui: uiUpdates });
             }
 
-            res.json({ ok: true, data: store.getUI() });
+            const nextUi = store.getUI();
+            runUiBackgroundCleanup([nextUi.loginBackground || '']);
+            res.json({ ok: true, data: nextUi });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -1201,11 +1246,13 @@ function startAdminServer(dataProvider) {
             const targetPath = path.join(saveDir, filename);
 
             fs.writeFileSync(targetPath, buffer);
+            const uploadedUrl = `/ui-backgrounds/${filename}`;
+            runUiBackgroundCleanup([uploadedUrl]);
 
             return res.json({
                 ok: true,
                 data: {
-                    url: `/ui-backgrounds/${filename}`,
+                    url: uploadedUrl,
                     mimeType,
                     size: buffer.length,
                 },
@@ -1301,7 +1348,25 @@ function startAdminServer(dataProvider) {
                 : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
             const reportConfig = store.getReportConfig
                 ? store.getReportConfig(id)
-                : { enabled: false, channel: 'webhook', endpoint: '', token: '', title: '经营汇报', hourlyEnabled: false, hourlyMinute: 5, dailyEnabled: true, dailyHour: 21, dailyMinute: 0 };
+                : {
+                    enabled: false,
+                    channel: 'webhook',
+                    endpoint: '',
+                    token: '',
+                    smtpHost: '',
+                    smtpPort: 465,
+                    smtpSecure: true,
+                    smtpUser: '',
+                    smtpPass: '',
+                    emailFrom: '',
+                    emailTo: '',
+                    title: '经营汇报',
+                    hourlyEnabled: false,
+                    hourlyMinute: 5,
+                    dailyEnabled: true,
+                    dailyHour: 21,
+                    dailyMinute: 0,
+                };
             const tradeConfig = store.getTradeConfig
                 ? store.getTradeConfig(id)
                 : { sell: { scope: 'fruit_only', keepMinEachFruit: 0, keepFruitIds: [], rareKeep: { enabled: false, judgeBy: 'either', minPlantLevel: 40, minUnitPrice: 2000 }, batchSize: 15, previewBeforeManualSell: false } };
@@ -1457,14 +1522,11 @@ function startAdminServer(dataProvider) {
 
             // 优化：将在线运行中的账号排在前面，离线的排在后面，同状态按等级排序
             accountList.sort((a, b) => {
-                if (a.running && !b.running) return -1;
-                if (!a.running && b.running) return 1;
+                const aState = a.connected ? 2 : (a.running ? 1 : 0);
+                const bState = b.connected ? 2 : (b.running ? 1 : 0);
+                if (aState !== bState) return bState - aState;
                 return (b.level || 0) - (a.level || 0);
             });
-
-            // Console log to trace running status issue reported by user
-            let runningMap = {};
-            accountList.forEach(a => runningMap[a.id] = a.running);
 
             res.json({ ok: true, data: { ...data, accounts: accountList } });
         } catch (e) {
@@ -1496,8 +1558,9 @@ function startAdminServer(dataProvider) {
             }
 
             accountList.sort((a, b) => {
-                if (a.running && !b.running) return -1;
-                if (!a.running && b.running) return 1;
+                const aState = a.connected ? 2 : (a.running ? 1 : 0);
+                const bState = b.connected ? 2 : (b.running ? 1 : 0);
+                if (aState !== bState) return bState - aState;
                 return (b[sortBy] || 0) - (a[sortBy] || 0);
             });
 
@@ -1610,8 +1673,14 @@ function startAdminServer(dataProvider) {
             }
 
             const data = await addOrUpdateAccount(payload);
+            const savedAccountId = isUpdate
+                ? String(payload.id || '')
+                : String((data.accounts[data.accounts.length - 1] || {}).id || '');
+            if (savedAccountId && typeof store.persistAccountsNow === 'function') {
+                await store.persistAccountsNow(savedAccountId);
+            }
             if (provider.addAccountLog) {
-                const accountId = isUpdate ? String(payload.id) : String((data.accounts[data.accounts.length - 1] || {}).id || '');
+                const accountId = savedAccountId;
                 const accountName = payload.name || '';
                 provider.addAccountLog(
                     isUpdate ? 'update' : 'add',

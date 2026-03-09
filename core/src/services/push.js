@@ -3,6 +3,7 @@
  */
 
 const pushoo = require('pushoo').default;
+const { sendEmailMessage } = require('./smtp-mailer');
 
 function assertRequiredText(name, value) {
     const text = String(value || '').trim();
@@ -15,20 +16,42 @@ function assertRequiredText(name, value) {
 /**
  * 发送推送
  * @param {object} payload
- * @param {string} payload.channel 必填 推送渠道（pushoo 平台名，如 webhook）
+ * @param {string} payload.channel 必填 推送渠道（pushoo 平台名，如 webhook，或 email）
  * @param {string} [payload.endpoint] webhook 接口地址（channel=webhook 时使用）
  * @param {string} payload.token 必填 推送 token
  * @param {string} payload.title 必填 推送标题
  * @param {string} payload.content 必填 推送内容
+ * @param {string} [payload.smtpHost] SMTP 服务器地址（channel=email 时使用）
+ * @param {number|string} [payload.smtpPort] SMTP 端口（channel=email 时使用）
+ * @param {boolean|string} [payload.smtpSecure] SMTP 是否直连 TLS（channel=email 时使用）
+ * @param {string} [payload.smtpUser] SMTP 用户名（channel=email 时使用）
+ * @param {string} [payload.smtpPass] SMTP 密码（channel=email 时使用）
+ * @param {string} [payload.emailFrom] 发件邮箱（channel=email 时使用）
+ * @param {string} [payload.emailTo] 收件邮箱，支持多个（channel=email 时使用）
  * @returns {Promise<{ok: boolean, code: string, msg: string, raw: any}>} 推送结果
  */
 async function sendPushooMessage(payload = {}) {
     const channel = assertRequiredText('channel', payload.channel);
+    const title = assertRequiredText('title', payload.title);
+    const content = assertRequiredText('content', payload.content);
+
+    if (channel === 'email') {
+        return await sendEmailMessage({
+            title,
+            content,
+            smtpHost: payload.smtpHost,
+            smtpPort: payload.smtpPort,
+            smtpSecure: payload.smtpSecure,
+            smtpUser: payload.smtpUser,
+            smtpPass: payload.smtpPass,
+            emailFrom: payload.emailFrom,
+            emailTo: payload.emailTo,
+        });
+    }
+
     const endpoint = String(payload.endpoint || '').trim();
     const rawToken = String(payload.token || '').trim();
     const token = channel === 'webhook' ? rawToken : assertRequiredText('token', rawToken);
-    const title = assertRequiredText('title', payload.title);
-    const content = assertRequiredText('content', payload.content);
 
     const options = {};
     if (channel === 'webhook') {

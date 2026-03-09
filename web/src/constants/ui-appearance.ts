@@ -1,5 +1,6 @@
 export type UiColorTheme = 'default' | 'sakura' | 'cyber' | 'elegant' | 'ocean'
 export type UiBackgroundScope = 'login_only' | 'login_and_app' | 'global'
+export type UiWorkspaceVisualPreset = 'console' | 'poster' | 'pure_glass'
 
 export interface ThemeOption {
   key: UiColorTheme
@@ -25,6 +26,32 @@ export interface LoginBackgroundPreset {
   builtIn?: boolean
 }
 
+export interface ThemeAppearanceConfig {
+  colorTheme: UiColorTheme
+  loginBackground: string
+  backgroundScope: UiBackgroundScope
+  workspaceVisualPreset: UiWorkspaceVisualPreset
+  loginBackgroundOverlayOpacity: number
+  loginBackgroundBlur: number
+  appBackgroundOverlayOpacity: number
+  appBackgroundBlur: number
+}
+
+export interface WorkspaceVisualPresetOption {
+  key: UiWorkspaceVisualPreset
+  name: string
+  description: string
+  badge: string
+  appOverlayOpacity: number
+  appBlur: number
+}
+
+export interface WorkspaceAppearanceConfig {
+  workspaceVisualPreset: UiWorkspaceVisualPreset
+  appBackgroundOverlayOpacity: number
+  appBackgroundBlur: number
+}
+
 export const THEME_OPTIONS: ThemeOption[] = [
   { key: 'default', color: '#22c55e', bg: 'bg-green-500', bgDark: 'bg-green-600', shadow: 'shadow-[0_0_8px_rgba(34,197,94,0.6)]', name: '御农翠绿 (默认)', desc: '经典护眼配色，生机盎然。代表农业的丰收与稳定。' },
   { key: 'sakura', color: '#ffc0cb', bg: 'bg-[#ffc0cb]', bgDark: 'bg-pink-400', shadow: 'shadow-[0_0_8px_rgba(255,192,203,0.8)]', name: '樱花粉黛 (Sakura)', desc: '活泼灵动的少女粉，猛男标配，点缀极简的玫瑰边框。' },
@@ -37,6 +64,33 @@ export const UI_BACKGROUND_SCOPE_OPTIONS = [
   { label: '仅登录页', value: 'login_only', description: '保留登录页大图，业务页维持当前纯玻璃控制台。' },
   { label: '登录页 + 主界面', value: 'login_and_app', description: '登录页强表现，主界面弱化继承同一张氛围背景。' },
   { label: '全局启用', value: 'global', description: '所有后续页面都沿用这套背景系统，适合做统一品牌皮肤。' },
+] as const
+
+export const UI_WORKSPACE_VISUAL_PRESETS: WorkspaceVisualPresetOption[] = [
+  {
+    key: 'console',
+    name: '控制台弱化版',
+    description: '兼顾可读性和氛围感，卡片更轻，背景会透出来，但业务信息依然最稳。',
+    badge: '稳',
+    appOverlayOpacity: 54,
+    appBlur: 8,
+  },
+  {
+    key: 'poster',
+    name: '海报沉浸版',
+    description: '背景参与感最强，像把控制台悬浮在一张海报之上，适合展示型界面。',
+    badge: '沉浸',
+    appOverlayOpacity: 42,
+    appBlur: 6,
+  },
+  {
+    key: 'pure_glass',
+    name: '极简纯玻璃版',
+    description: '卡片更通透，靠更高的模糊稳住阅读，整体会更轻更现代。',
+    badge: '通透',
+    appOverlayOpacity: 48,
+    appBlur: 12,
+  },
 ] as const
 
 export const LOGIN_BACKGROUND_PRESETS: LoginBackgroundPreset[] = [
@@ -108,14 +162,14 @@ export const LOGIN_BACKGROUND_PRESETS: LoginBackgroundPreset[] = [
   {
     key: 'sample-red-horse',
     title: '红绫跃马',
-    description: '你提供的示例图，酒红氛围很强，适合做登录页强视觉方案。',
-    url: 'https://pic.netbian.com/uploads/allimg/260224/231748-1771946268a32d.jpg',
+    description: '本地化保留的酒红氛围方案，适合做登录页强视觉和展示型封面。',
+    url: '/background-presets/crimson-velvet.svg',
     overlayOpacity: 34,
     blur: 3,
     appOverlayOpacity: 66,
     appBlur: 10,
     badge: '示例图',
-    builtIn: false,
+    builtIn: true,
   },
 ]
 
@@ -125,4 +179,48 @@ export function getThemeOption(themeKey: string) {
 
 export function getThemeBackgroundPreset(themeKey: string) {
   return LOGIN_BACKGROUND_PRESETS.find(preset => preset.themeKey === themeKey) || LOGIN_BACKGROUND_PRESETS[0]!
+}
+
+export function getThemeWorkspaceVisualPreset(themeKey: string): UiWorkspaceVisualPreset {
+  const theme = getThemeOption(themeKey)
+
+  switch (theme.key) {
+    case 'cyber':
+    case 'elegant':
+      return 'poster'
+    case 'ocean':
+      return 'pure_glass'
+    case 'default':
+    case 'sakura':
+    default:
+      return 'console'
+  }
+}
+
+export function getThemeAppearanceConfig(themeKey: string, backgroundScope: UiBackgroundScope = 'login_and_app'): ThemeAppearanceConfig {
+  const theme = getThemeOption(themeKey)
+  const preset = getThemeBackgroundPreset(theme.key)
+  return {
+    colorTheme: theme.key,
+    loginBackground: preset.url,
+    backgroundScope,
+    workspaceVisualPreset: getThemeWorkspaceVisualPreset(theme.key),
+    loginBackgroundOverlayOpacity: preset.overlayOpacity,
+    loginBackgroundBlur: preset.blur,
+    appBackgroundOverlayOpacity: preset.appOverlayOpacity,
+    appBackgroundBlur: preset.appBlur,
+  }
+}
+
+export function getWorkspaceVisualPreset(presetKey: string) {
+  return UI_WORKSPACE_VISUAL_PRESETS.find(preset => preset.key === presetKey) || UI_WORKSPACE_VISUAL_PRESETS[0]!
+}
+
+export function getWorkspaceAppearanceConfig(presetKey: string): WorkspaceAppearanceConfig {
+  const preset = getWorkspaceVisualPreset(presetKey)
+  return {
+    workspaceVisualPreset: preset.key,
+    appBackgroundOverlayOpacity: preset.appOverlayOpacity,
+    appBackgroundBlur: preset.appBlur,
+  }
 }

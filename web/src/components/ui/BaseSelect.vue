@@ -57,7 +57,7 @@ onUnmounted(() => {
     <div class="relative">
       <!-- Trigger -->
       <div
-        class="glass-text-main w-full flex cursor-pointer items-center justify-between border border-gray-200/50 rounded-lg bg-black/5 px-3 py-2 shadow-sm outline-none backdrop-blur-sm transition-all duration-200 dark:border-white/10 dark:bg-black/20 hover:bg-black/10 dark:hover:bg-black/40"
+        class="base-select-trigger glass-text-main w-full flex cursor-pointer items-center justify-between border border-gray-200/50 rounded-lg bg-black/5 px-3 py-2 shadow-sm outline-none backdrop-blur-sm transition-all duration-200 dark:border-white/10 dark:bg-black/20 hover:bg-black/10 dark:hover:bg-black/40"
         :class="{
           'bg-gray-50/50 text-gray-400 cursor-not-allowed dark:bg-black/40 hover:bg-gray-50/50 dark:hover:bg-black/40': disabled,
           'ring-2 ring-primary-500/20 border-primary-500 dark:focus:border-primary-500': isOpen,

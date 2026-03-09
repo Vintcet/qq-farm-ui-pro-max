@@ -88,6 +88,7 @@ function createDataProvider(options) {
         doFriendOp: async (accountRef, gid, opType) => callWorkerApi(await resolveAccountRefId(accountRef), 'doFriendOp', gid, opType),
         doFriendBatchOp: async (accountRef, gids, opType, options) => callWorkerApi(await resolveAccountRefId(accountRef), 'doFriendBatchOp', gids, opType, options),
         getBag: async (accountRef) => callWorkerApi(await resolveAccountRefId(accountRef), 'getBag'),
+        useBagItem: async (accountRef, itemId, count, landIds) => callWorkerApi(await resolveAccountRefId(accountRef), 'useBagItem', itemId, count, landIds),
         getMallGoods: async (accountRef, slotType) => callWorkerApi(await resolveAccountRefId(accountRef), 'getMallGoods', slotType),
         buyMallGoods: async (accountRef, goodsId, count) => callWorkerApi(await resolveAccountRefId(accountRef), 'buyMallGoods', goodsId, count),
         getSellPreview: async (accountRef, tradeConfig) => callWorkerApi(await resolveAccountRefId(accountRef), 'getSellPreview', tradeConfig),
@@ -209,8 +210,12 @@ function createDataProvider(options) {
         getAccounts: async () => {
             const data = await getAccounts();
             data.accounts.forEach((a) => {
-                const worker = workers[a.id];
-                a.running = !!worker;
+                const accountId = String(a.id || '');
+                const worker = workers[accountId];
+                const storedRunning = !!a.running;
+                const storedConnected = !!a.connected;
+
+                a.running = storedRunning || !!worker;
 
                 if (worker) {
                     a.wsError = worker.wsError ? { code: worker.wsError.code, message: worker.wsError.message } : null;
@@ -220,7 +225,7 @@ function createDataProvider(options) {
                         a.connected = false;
                     }
                 } else {
-                    a.connected = false;
+                    a.connected = storedConnected;
                     a.wsError = a.wsError || null;
                 }
 

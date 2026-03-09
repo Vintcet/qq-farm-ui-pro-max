@@ -105,6 +105,25 @@ export const useBagStore = defineStore('bag', () => {
     }
   }
 
+  async function useBagItem(accountId: string, itemId: number, count = 1, landIds: number[] = []) {
+    if (!accountId || !itemId)
+      return null
+    actionLoading.value = true
+    try {
+      const res = await api.post('/api/bag/use', { itemId, count, landIds }, {
+        headers: { 'x-account-id': accountId },
+      })
+      await Promise.all([
+        fetchBag(accountId),
+        fetchSellPreview(accountId),
+      ])
+      return res.data?.data || null
+    }
+    finally {
+      actionLoading.value = false
+    }
+  }
+
   async function sellByPolicy(accountId: string) {
     if (!accountId)
       return null
@@ -156,6 +175,7 @@ export const useBagStore = defineStore('bag', () => {
     fetchBag,
     fetchMallGoods,
     fetchSellPreview,
+    useBagItem,
     buyMallGoods,
     sellByPolicy,
     sellSelected,

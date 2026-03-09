@@ -6,6 +6,8 @@
     "dev:web": "pnpm -C web dev",
     "dev": "pnpm build:web && pnpm dev:core",
     "start": "pnpm -C core start",
+    "import:item-icons": "node scripts/utils/import-item-icons.js",
+    "test:ui-assets": "node --test core/__tests__/ui-assets.test.js",
     "start:ai": "node scripts/service/ai-autostart.js start",
     "stop:ai": "node scripts/service/ai-autostart.js stop",
     "restart:ai": "node scripts/service/ai-autostart.js restart",

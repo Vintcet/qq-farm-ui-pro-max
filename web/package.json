@@ -1,11 +1,12 @@
 {
   "name": "qq-farm-bot-web",
   "type": "module",
-  "version": "4.5.10",
+  "version": "4.5.11",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "check:ui-appearance": "node scripts/check-ui-appearance.mjs",
     "lint": "eslint \"src/**/*.{ts,vue}\" --fix",
     "preview": "vite preview"
   },

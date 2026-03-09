@@ -77,6 +77,13 @@ export interface ReportConfig {
   channel: string
   endpoint: string
   token: string
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  smtpUser: string
+  smtpPass: string
+  emailFrom: string
+  emailTo: string
   title: string
   hourlyEnabled: boolean
   hourlyMinute: number
@@ -233,6 +240,13 @@ export const useSettingStore = defineStore('setting', () => {
       channel: 'webhook',
       endpoint: '',
       token: '',
+      smtpHost: '',
+      smtpPort: 465,
+      smtpSecure: true,
+      smtpUser: '',
+      smtpPass: '',
+      emailFrom: '',
+      emailTo: '',
       title: '经营汇报',
       hourlyEnabled: false,
       hourlyMinute: 5,
@@ -346,6 +360,13 @@ export const useSettingStore = defineStore('setting', () => {
           channel: 'webhook',
           endpoint: '',
           token: '',
+          smtpHost: '',
+          smtpPort: 465,
+          smtpSecure: true,
+          smtpUser: '',
+          smtpPass: '',
+          emailFrom: '',
+          emailTo: '',
           title: '经营汇报',
           hourlyEnabled: false,
           hourlyMinute: 5,

@@ -617,6 +617,9 @@ async function handleApiCall(msg) {
             case 'getBag':
                 result = await require('../services/warehouse').getBagDetail();
                 break;
+            case 'useBagItem':
+                result = await require('../services/warehouse').useItem(args[0], args[1] || 1, args[2] || []);
+                break;
             case 'getMallGoods':
                 result = await getMallGoodsCatalog(args[0]);
                 break;

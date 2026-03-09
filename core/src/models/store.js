@@ -16,6 +16,7 @@ const PUSHOO_CHANNELS = new Set([
     'pushdeer', 'igot', 'telegram', 'feishu', 'ifttt', 'wecombot',
     'discord', 'wxpusher',
 ]);
+const REPORT_CHANNELS = new Set([...PUSHOO_CHANNELS, 'email']);
 const INTERVAL_MAX_SEC = 86400;
 const DEFAULT_OFFLINE_REMINDER = {
     channel: 'webhook',
@@ -31,6 +32,13 @@ const DEFAULT_REPORT_CONFIG = {
     channel: 'webhook',
     endpoint: '',
     token: '',
+    smtpHost: '',
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpUser: '',
+    smtpPass: '',
+    emailFrom: '',
+    emailTo: '',
     title: '经营汇报',
     hourlyEnabled: false,
     hourlyMinute: 5,
@@ -82,10 +90,12 @@ const DEFAULT_UI_CONFIG = {
     backgroundScope: 'login_only',
     loginBackgroundOverlayOpacity: 30,
     loginBackgroundBlur: 2,
-    appBackgroundOverlayOpacity: 60,
+    workspaceVisualPreset: 'console',
+    appBackgroundOverlayOpacity: 54,
     appBackgroundBlur: 8,
     colorTheme: 'default',
     performanceMode: true,
+    themeBackgroundLinked: false,
     timestamp: 0,
 };
 // ============ 全局配置 ============
@@ -202,6 +212,14 @@ function normalizeUIConfig(input, fallback = DEFAULT_UI_CONFIG) {
         ? String(src.colorTheme).trim()
         : String(base.colorTheme || DEFAULT_UI_CONFIG.colorTheme);
     const colorTheme = rawColorTheme || DEFAULT_UI_CONFIG.colorTheme;
+    const rawWorkspaceVisualPreset = String(
+        src.workspaceVisualPreset !== undefined
+            ? src.workspaceVisualPreset
+            : (base.workspaceVisualPreset || DEFAULT_UI_CONFIG.workspaceVisualPreset),
+    ).toLowerCase();
+    const workspaceVisualPreset = new Set(['console', 'poster', 'pure_glass']).has(rawWorkspaceVisualPreset)
+        ? rawWorkspaceVisualPreset
+        : DEFAULT_UI_CONFIG.workspaceVisualPreset;
     const rawTimestamp = Number.parseInt(src.timestamp, 10);
     const fallbackTimestamp = Number.parseInt(base.timestamp, 10);
 
@@ -221,6 +239,7 @@ function normalizeUIConfig(input, fallback = DEFAULT_UI_CONFIG) {
             0,
             12,
         ),
+        workspaceVisualPreset,
         appBackgroundOverlayOpacity: clampUiNumber(
             src.appBackgroundOverlayOpacity,
             clampUiNumber(base.appBackgroundOverlayOpacity, DEFAULT_UI_CONFIG.appBackgroundOverlayOpacity, 20, 90),
@@ -235,6 +254,7 @@ function normalizeUIConfig(input, fallback = DEFAULT_UI_CONFIG) {
         ),
         colorTheme,
         performanceMode: src.performanceMode !== undefined ? !!src.performanceMode : !!base.performanceMode,
+        themeBackgroundLinked: src.themeBackgroundLinked !== undefined ? !!src.themeBackgroundLinked : !!base.themeBackgroundLinked,
         timestamp: Number.isFinite(rawTimestamp) && rawTimestamp >= 0
             ? rawTimestamp
             : (Number.isFinite(fallbackTimestamp) && fallbackTimestamp >= 0 ? fallbackTimestamp : DEFAULT_UI_CONFIG.timestamp),
@@ -300,9 +320,16 @@ function normalizeReportConfig(rawConfig, fallbackConfig = DEFAULT_REPORT_CONFIG
     const rawChannel = String(raw.channel !== undefined ? raw.channel : fallback.channel || DEFAULT_REPORT_CONFIG.channel).trim().toLowerCase();
     return {
         enabled: raw.enabled !== undefined ? !!raw.enabled : !!fallback.enabled,
-        channel: PUSHOO_CHANNELS.has(rawChannel) ? rawChannel : DEFAULT_REPORT_CONFIG.channel,
+        channel: REPORT_CHANNELS.has(rawChannel) ? rawChannel : DEFAULT_REPORT_CONFIG.channel,
         endpoint: String(raw.endpoint !== undefined ? raw.endpoint : fallback.endpoint || '').trim(),
         token: String(raw.token !== undefined ? raw.token : fallback.token || '').trim(),
+        smtpHost: String(raw.smtpHost !== undefined ? raw.smtpHost : fallback.smtpHost || '').trim(),
+        smtpPort: clampInteger(raw.smtpPort, fallback.smtpPort || DEFAULT_REPORT_CONFIG.smtpPort, 1, 65535),
+        smtpSecure: raw.smtpSecure !== undefined ? !!raw.smtpSecure : !!fallback.smtpSecure,
+        smtpUser: String(raw.smtpUser !== undefined ? raw.smtpUser : fallback.smtpUser || '').trim(),
+        smtpPass: String(raw.smtpPass !== undefined ? raw.smtpPass : fallback.smtpPass || '').trim(),
+        emailFrom: String(raw.emailFrom !== undefined ? raw.emailFrom : fallback.emailFrom || '').trim(),
+        emailTo: String(raw.emailTo !== undefined ? raw.emailTo : fallback.emailTo || '').trim(),
         title: String(raw.title !== undefined ? raw.title : fallback.title || DEFAULT_REPORT_CONFIG.title).trim() || DEFAULT_REPORT_CONFIG.title,
         hourlyEnabled: raw.hourlyEnabled !== undefined ? !!raw.hourlyEnabled : !!fallback.hourlyEnabled,
         hourlyMinute: clampInteger(raw.hourlyMinute, fallback.hourlyMinute, 0, 59),
@@ -1183,6 +1210,61 @@ function queueAccountPersistIds(data, touchedAccountIds) {
         .forEach(id => _pendingAccountPersistIds.add(id));
 }
 
+async function persistPendingAccounts() {
+    const pool = getPool();
+    if (!pool) {
+        return;
+    }
+
+    const snapshot = cloneAccountsData(cachedAccountsData);
+    const pendingIds = Array.from(_pendingAccountPersistIds);
+    if (!pendingIds.length) {
+        return;
+    }
+
+    const failedIds = [];
+    for (const accountId of pendingIds) {
+        const acc = snapshot.accounts.find(item => String(item && item.id) === String(accountId));
+        if (!acc) {
+            continue;
+        }
+
+        const platform = acc.platform || 'qq';
+        const primaryUin = platform === 'qq'
+            ? String(acc.uin || acc.qq || '').trim()
+            : String(acc.uin || '').trim();
+        const authData = JSON.stringify({
+            uin: String(acc.uin || '').trim(),
+            qq: String(acc.qq || '').trim(),
+            code: acc.code || '',
+            authTicket: String(acc.authTicket || '').trim(),
+        });
+
+        try {
+            await pool.query(
+                "INSERT INTO accounts (id, uin, nick, name, platform, running, code, username, avatar, auth_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE uin=COALESCE(NULLIF(VALUES(uin),''), uin), nick=VALUES(nick), name=VALUES(name), platform=VALUES(platform), running=VALUES(running), code=COALESCE(NULLIF(VALUES(code),''), code), username=COALESCE(NULLIF(VALUES(username),''), username), avatar=COALESCE(NULLIF(VALUES(avatar),''), avatar), auth_data=COALESCE(NULLIF(VALUES(auth_data),''), auth_data)",
+                [
+                    acc.id,
+                    primaryUin,
+                    acc.nick || '',
+                    acc.name || '',
+                    platform,
+                    acc.running ? 1 : 0,
+                    acc.code || '',
+                    acc.username || '',
+                    acc.avatar || '',
+                    authData,
+                ]
+            );
+        } catch (e) {
+            failedIds.push(String(accountId));
+            console.error("DB Async Insert Account Failed", e.message);
+        }
+    }
+
+    _pendingAccountPersistIds = new Set(failedIds);
+}
+
 function saveAccounts(data, touchedAccountIds) {
     cachedAccountsData = normalizeAccountsData(data); // 内存立即生效
     _accountsLoadedAt = Date.now();
@@ -1191,44 +1273,19 @@ function saveAccounts(data, touchedAccountIds) {
 
     _accountsSaveTimer = setTimeout(() => {
         _accountsSaveTimer = null;
-        const pool = getPool();
-        const snapshot = cloneAccountsData(cachedAccountsData);
-        const pendingIds = Array.from(_pendingAccountPersistIds);
-        _pendingAccountPersistIds = new Set();
-        try {
-            for (const accountId of pendingIds) {
-                const acc = snapshot.accounts.find(item => String(item && item.id) === String(accountId));
-                if (!acc) continue;
-                const platform = acc.platform || 'qq';
-                const primaryUin = platform === 'qq'
-                    ? String(acc.uin || acc.qq || '').trim()
-                    : String(acc.uin || '').trim();
-                const authData = JSON.stringify({
-                    uin: String(acc.uin || '').trim(),
-                    qq: String(acc.qq || '').trim(),
-                    code: acc.code || '',
-                    authTicket: String(acc.authTicket || '').trim(),
-                });
-                pool.query(
-                    "INSERT INTO accounts (id, uin, nick, name, platform, running, code, username, avatar, auth_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE uin=COALESCE(NULLIF(VALUES(uin),''), uin), nick=VALUES(nick), name=VALUES(name), platform=VALUES(platform), running=VALUES(running), code=COALESCE(NULLIF(VALUES(code),''), code), username=COALESCE(NULLIF(VALUES(username),''), username), avatar=COALESCE(NULLIF(VALUES(avatar),''), avatar), auth_data=COALESCE(NULLIF(VALUES(auth_data),''), auth_data)",
-                    [
-                        acc.id,
-                        primaryUin,
-                        acc.nick || '',
-                        acc.name || '',
-                        platform,
-                        acc.running ? 1 : 0,
-                        acc.code || '',
-                        acc.username || '',
-                        acc.avatar || '',
-                        authData,
-                    ]
-                ).catch(e => console.error("DB Async Insert Account Failed", e.message));
-            }
-        } catch (e) {
+        void persistPendingAccounts().catch((e) => {
             console.error('保存账号数据失败:', e.message);
-        }
+        });
     }, 2000);
+}
+
+async function persistAccountsNow(touchedAccountIds) {
+    queueAccountPersistIds(cachedAccountsData, touchedAccountIds);
+    if (_accountsSaveTimer) {
+        clearTimeout(_accountsSaveTimer);
+        _accountsSaveTimer = null;
+    }
+    await persistPendingAccounts();
 }
 
 function getAccounts() {
@@ -1535,6 +1592,7 @@ module.exports = {
     getAccounts,
     getAccountsFresh,
     getAccountFull,
+    persistAccountsNow,
     getThirdPartyApiConfig,
     setThirdPartyApiConfig,
     getTrialCardConfig,

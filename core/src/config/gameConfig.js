@@ -5,7 +5,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { getResourcePath } = require('./runtime-paths');
+const { ensureAssetCacheDir, getResourcePath } = require('./runtime-paths');
+const { cleanupGeneratedItemIconCache } = require('../services/ui-assets');
 
 // ============ 等级经验表 ============
 let roleLevelConfig = null;
@@ -21,6 +22,147 @@ const itemInfoMap = new Map();  // item_id -> item
 const seedItemMap = new Map();  // seed_id -> item(type=5)
 const seedImageMap = new Map(); // seed_id -> image url
 const seedAssetImageMap = new Map(); // asset_name (Crop_xxx) -> image url
+const itemImageMap = new Map(); // item_id -> image url
+const itemIconKeyImageMap = new Map(); // normalized icon/asset key -> image url
+
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|svg)$/i;
+
+function normalizeIconLookupKey(value) {
+    return String(value || '')
+        .replace(/\/spriteFrame$/i, '')
+        .replace(IMAGE_EXT_RE, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase();
+}
+
+function toStaticGameConfigUrl(fullPath) {
+    const relPath = path.relative(getResourcePath('gameConfig'), fullPath);
+    const safePath = relPath.split(path.sep).map(seg => encodeURIComponent(seg)).join('/');
+    return `/game-config/${safePath}`;
+}
+
+function walkImageFiles(dirPath, visitor) {
+    if (!fs.existsSync(dirPath)) return;
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+            walkImageFiles(fullPath, visitor);
+            continue;
+        }
+        if (!IMAGE_EXT_RE.test(entry.name)) continue;
+        visitor(fullPath, entry.name);
+    }
+}
+
+function loadItemIconMappings(configDir) {
+    itemImageMap.clear();
+    itemIconKeyImageMap.clear();
+    const itemIconDir = path.join(configDir, 'item_icons');
+    if (!fs.existsSync(itemIconDir)) return;
+
+    walkImageFiles(itemIconDir, (fullPath, filename) => {
+        const staticUrl = toStaticGameConfigUrl(fullPath);
+        const basename = path.basename(filename, path.extname(filename));
+        const byId = basename.match(/^(\d+)(?:[_-].*)?$/);
+        if (byId) {
+            const itemId = Number(byId[1]) || 0;
+            if (itemId > 0 && !itemImageMap.has(itemId)) {
+                itemImageMap.set(itemId, staticUrl);
+            }
+        }
+
+        const normalizedBase = normalizeIconLookupKey(basename);
+        if (normalizedBase && !itemIconKeyImageMap.has(normalizedBase)) {
+            itemIconKeyImageMap.set(normalizedBase, staticUrl);
+        }
+    });
+
+    console.warn(`[配置] 已加载物品图标映射 (${itemImageMap.size} 项ID，${itemIconKeyImageMap.size} 项键值)`);
+}
+
+function cleanupGeneratedIconCache() {
+    try {
+        const result = cleanupGeneratedItemIconCache({
+            dirPath: ensureAssetCacheDir('item-icons'),
+            validItemIds: Array.from(itemInfoMap.keys()),
+        });
+        if (result.deleted.length > 0) {
+            console.warn(`[配置] 已清理过期物品图标缓存 (${result.deleted.length} 项)`);
+        }
+    } catch (e) {
+        console.warn('[配置] 清理物品图标缓存失败:', e.message);
+    }
+}
+
+function getGeneratedIconPalette(item) {
+    const type = Number(item && item.type) || 0;
+    const rarity = Math.max(0, Number(item && item.rarity) || 0);
+    const palettes = {
+        2: ['#eab308', '#f97316', '#1f2937'],
+        5: ['#22c55e', '#14b8a6', '#ecfeff'],
+        6: ['#f97316', '#ef4444', '#fff7ed'],
+        7: ['#0ea5e9', '#2563eb', '#eff6ff'],
+        9: ['#8b5cf6', '#7c3aed', '#f5f3ff'],
+        11: ['#ec4899', '#be185d', '#fff1f2'],
+        12: ['#eab308', '#ca8a04', '#fefce8'],
+    };
+    const [start, end, text] = palettes[type] || ['#475569', '#1e293b', '#f8fafc'];
+    const badgeFill = rarity >= 4 ? '#fde68a' : (rarity >= 2 ? '#c4b5fd' : '#cbd5e1');
+    const badgeText = rarity >= 4 ? '#92400e' : (rarity >= 2 ? '#5b21b6' : '#334155');
+    return { start, end, text, badgeFill, badgeText };
+}
+
+function getGeneratedIconLabel(itemId, item) {
+    const id = Number(itemId) || 0;
+    const type = Number(item && item.type) || 0;
+    if (type === 5) return 'SD';
+    if (type === 6) return 'FR';
+    if (type === 7) return 'FT';
+    if (type === 9) return 'DG';
+    if (type === 11) return 'BX';
+    if (type === 12) return 'CP';
+    if (id === 1001 || id === 1) return 'GD';
+    if (id === 1002) return 'TK';
+    if (id === 1101) return 'XP';
+    return 'IT';
+}
+
+function buildGeneratedIconSvg(itemId, item) {
+    const palette = getGeneratedIconPalette(item);
+    const label = getGeneratedIconLabel(itemId, item);
+    const rarity = Math.max(0, Number(item && item.rarity) || 0);
+    const rarityLabel = String(Math.max(1, Math.min(9, rarity || 1)));
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="18" y1="14" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="${palette.start}"/>
+      <stop offset="1" stop-color="${palette.end}"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="30" fill="url(#bg)"/>
+  <rect x="18" y="18" width="92" height="92" rx="24" fill="rgba(255,255,255,0.08)"/>
+  <circle cx="95" cy="33" r="15" fill="${palette.badgeFill}" opacity="0.95"/>
+  <text x="95" y="38" text-anchor="middle" font-size="15" font-weight="700" fill="${palette.badgeText}" font-family="Arial, sans-serif">${rarityLabel}</text>
+  <text x="64" y="73" text-anchor="middle" font-size="34" font-weight="700" fill="${palette.text}" font-family="Arial, sans-serif" letter-spacing="2">${label}</text>
+  <text x="64" y="96" text-anchor="middle" font-size="12" font-weight="600" fill="${palette.text}" fill-opacity="0.85" font-family="Arial, sans-serif">#${Number(itemId) || 0}</text>
+</svg>`.trim();
+}
+
+function getGeneratedItemImageUrl(itemId, item) {
+    const id = Number(itemId) || 0;
+    if (id <= 0) return '';
+    const iconDir = ensureAssetCacheDir('item-icons');
+    const filename = `item-${id}.svg`;
+    const fullPath = path.join(iconDir, filename);
+    if (!fs.existsSync(fullPath)) {
+        const svg = buildGeneratedIconSvg(id, item || itemInfoMap.get(id) || null);
+        fs.writeFileSync(fullPath, svg, 'utf8');
+    }
+    return `/asset-cache/item-icons/${encodeURIComponent(filename)}`;
+}
 
 /**
  * 加载配置文件
@@ -122,6 +264,14 @@ function loadConfigs() {
     } catch (e) {
         console.warn('[配置] 加载 seed_images_named 失败:', e.message);
     }
+
+    try {
+        loadItemIconMappings(configDir);
+    } catch (e) {
+        console.warn('[配置] 加载 item_icons 失败:', e.message);
+    }
+
+    cleanupGeneratedIconCache();
 }
 
 // ============ 等级经验相关 ============
@@ -282,6 +432,24 @@ function getItemImageById(itemId) {
         return '';
     };
 
+    const getLocalItemImg = (targetId) => {
+        const direct = itemImageMap.get(targetId);
+        if (direct) return direct;
+        const item = itemInfoMap.get(targetId);
+        if (!item) return '';
+        const iconKey = normalizeIconLookupKey(item.icon_res);
+        if (iconKey) {
+            const mapped = itemIconKeyImageMap.get(iconKey);
+            if (mapped) return mapped;
+        }
+        const assetKey = normalizeIconLookupKey(item.asset_name);
+        if (assetKey) {
+            const mapped = itemIconKeyImageMap.get(assetKey);
+            if (mapped) return mapped;
+        }
+        return '';
+    };
+
     // 1. 尝试直接获取
     let img = getImg(id);
     if (img) return img;
@@ -293,7 +461,10 @@ function getItemImageById(itemId) {
         if (img) return img;
     }
 
-    return '';
+    img = getLocalItemImg(id);
+    if (img) return img;
+
+    return getGeneratedItemImageUrl(id, itemInfoMap.get(id) || null);
 }
 
 function getItemById(itemId) {

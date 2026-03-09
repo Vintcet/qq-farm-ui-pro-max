@@ -120,3 +120,112 @@
 - 处理方式：对 `Settings.vue` 的主题联动卡片绑定、`ui-appearance.ts` 的类型声明、若干 Vue 文件的 UnoCSS/样式顺序做了最小规范收口。
 - 结果：`pnpm -C web lint`、`pnpm -C web build`、`pnpm -C core build:release` 已重新通过。
 - 结论：本轮新增功能链路本身可用，`v4.5.10` 主要是把远端 CI 与当前前端规范基线重新对齐。
+
+## 9. 二次复查补充（2026-03-08 23:10）
+
+### 9.1 新确认的问题
+
+- **主题整套联动在重构后参数不完整**:
+  `getThemeAppearanceConfig()` 一度只返回登录页背景与登录页遮罩/模糊参数，导致“5 套主题联动方案”和“主题锁定背景”在切换主题后，主界面遮罩/模糊参数并不会一起更新。
+- **主界面视觉预设处于半接入状态**:
+  `workspaceVisualPreset`、`UI_WORKSPACE_VISUAL_PRESETS` 和对应的服务端持久化都已经接入，但设置页没有实际入口，只能靠临时绑定数组避免 lint 报未使用。
+
+### 9.2 影响判断与处理
+
+- **用户感知层面**:
+  主题卡片文案宣称会同步“主界面参数”，但实际行为只改登录页，属于明确的功能感知不一致。
+- **维护层面**:
+  主界面视觉预设在代码层存在、在界面层缺席，后续很容易被误判成“功能已上线”，增加复查和交接成本。
+- **当前处理**:
+  - 已恢复主题整套联动的主界面参数同步。
+  - 已在设置页补上主界面视觉预设可视化卡片。
+  - 已删除仅用于规避 lint 的占位绑定，改为真实模板接入。
+
+### 9.3 目前剩余风险与建议
+
+- **主题联动范围回退已补正**:
+  原本在开启“主题锁定背景”后从右侧抽屉切主题，或直接点击抽屉中的“套用主题背景”，会把已保存的 `global` 背景范围默认写回 `login_and_app`。现已改为保留用户当前作用范围，仅在非全局模式下继续套用“登录页 + 主界面”主题联动。
+- **主题联动混合态提示已补正**:
+  实测联调发现，`workspaceVisualPreset` 会保留上一次手动选择的业务页风格，而“主题锁定背景”会单独注入当前主题的主界面遮罩/模糊参数，导致设置页顶部一度误显示为某个预设。现已改为按真实组合识别，混合态统一显示为“主题联动自定义”，避免把“海报沉浸版 / 控制台弱化版”等名称误当成当前实际参数。
+- **整套主题已补齐业务页风格写入**:
+  当前已为 5 套主题明确补上业务页风格映射，并把 `workspaceVisualPreset` 一并纳入主题联动保存链路。实测 `Ocean` 整套在开启 `themeBackgroundLinked` 且作用范围为 `global` 时，保存后服务端返回值已同步为 `workspaceVisualPreset: pure_glass`，不再残留旧的手动预设值。
+- **地块类道具多选已补正**:
+  背包详情里像浇水、除草、除虫、播种这类带 `land_ids` 的使用操作，原先允许选中的地块数超过当前物品库存，前端又会把 `count` 截断成库存上限，形成“文案显示按已选地块数消耗，但请求实际只带较小 count”的不一致。现已改为在 UI 侧按库存数量限制可选地块，并在使用成功后立即刷新土地列表状态。
+- **兼容 UseRequest 的 fallback 分支已补写 land_ids**:
+  `warehouse.useItem()` 在遇到旧接口编码兼容分支时，原先只写了 `{ item: { id, count } }`，没有继续携带 `land_ids`。这会让土地类道具在特殊兼容路径下失去目标地块参数。现已在 fallback 请求中补齐 repeated `land_ids` 字段。
+- **后续建议**:
+  建议补一条最小化的 `bag/use` 集成校验，至少覆盖“土地类道具 + `land_ids` + fallback 编码”的请求体构造。当前 `lint` / `build` / `node --check` 能兜住语法和构建，但仍无法替代真实协议层回归。
+- **外链字体告警**:
+  已处理。`web/uno.config.ts` 已移除 Google Fonts 在线拉取，改为本地字体栈，`pnpm -C web build` 不再出现此前的 Web Fonts 拉取失败告警。
+- **背景与图标缓存增长**:
+  已处理。服务端已新增未引用背景和过期生成图标缓存的清理逻辑，风险从“无清理机制”降为“后续按实际容量观察阈值是否需要再调优”。
+- **背景预设可用性**:
+  已处理当前已知外链项。示例背景 `sample-red-horse` 已改为本地 SVG 资源，当前登录背景预设已不再依赖第三方图片站。
+
+### 9.4 补充验证
+
+- `node --check core/src/config/gameConfig.js`
+- `node --check core/src/controllers/admin.js`
+- `node --check core/src/models/store.js`
+- `node --check core/src/services/ui-assets.js`
+- `node --check core/src/services/mall.js`
+- `pnpm test:ui-assets`
+- `pnpm -C web check:ui-appearance`
+- `pnpm -C web lint`
+- `pnpm -C web build`
+- `pnpm -C core build:release`
+
+## 10. 建议执行结果（2026-03-08 23:35）
+
+### 10.1 已执行项
+
+- **自动清理未引用背景文件**:
+  已新增 `core/src/services/ui-assets.js`，在服务端启动、保存主题配置、上传新背景时都会清理过期且未引用的 `ui-backgrounds` 文件。
+- **自动清理过期生成图标缓存**:
+  `gameConfig` 加载时会清理过期或无效的 `data/asset-cache/item-icons` 生成 SVG 缓存，避免长期累积。
+- **主题联动最小自动校验**:
+  已新增 `web/scripts/check-ui-appearance.mjs`，会校验主题背景配置是否同时包含登录页和主界面参数。
+- **本地化字体与示例背景**:
+  已移除 UnoCSS 的在线字体拉取，并把示例酒红背景改为仓库内置 `crimson-velvet.svg`。
+
+### 10.2 补充验证
+
+- `pnpm test:ui-assets`
+- `pnpm -C web check:ui-appearance`
+- `pnpm -C web lint`
+- `pnpm -C web build`
+- `pnpm -C core build:release`
+
+## 11. 补充复查（2026-03-09）
+
+### 11.1 本轮新增确认
+
+- **SMTP 邮件汇报已全链路接入**:
+  `reportConfig.channel` 新增 `email`，设置页已可维护 `smtpHost / smtpPort / smtpSecure / smtpUser / smtpPass / emailFrom / emailTo`，服务端归一化、配置校验、汇报可用性判断和推送下发链路已保持一致。
+- **账号保存后立即持久化**:
+  管理端保存账号成功后会直接调用 `persistAccountsNow()`，减少扫码登录成功后尚未等到批量落库就异常退出的风险。
+- **好友拉取兼容模式改为按账号缓存**:
+  `SyncAll / GetAll` 的探测结果现在以账号维度缓存，不再一个账号切到兼容模式后影响整台机器所有账号。
+- **好友日志噪声已压低**:
+  好友列表调试日志和周期状态日志增加 TTL 去重，长时间挂机时更容易看见真正的新异常。
+- **背包使用链路继续补正**:
+  `worker` 已补齐 `useBagItem` 调用面，土地类道具在旧编码 fallback 分支也会继续携带 `land_ids`。
+
+### 11.2 本轮验证
+
+- `git diff --check`
+- `node --check core/src/services/smtp-mailer.js`
+- `node --check core/src/services/push.js`
+- `node --check core/src/services/report-service.js`
+- `node --check core/src/config-validator.js`
+- `pnpm test:ui-assets`
+- `pnpm -C web check:ui-appearance`
+- `pnpm -C web exec vue-tsc --noEmit`
+- `pnpm -C web build`
+- `pnpm -C core build:release`
+
+### 11.3 当前仍建议关注
+
+- `smtp-mailer` 采用的是手写 SMTP 协议实现，当前适合纯文本经营汇报；如果后面要支持更复杂的 HTML 模板、附件或更复杂的认证兼容，建议补集成测试并考虑是否引入成熟邮件库。
+- 好友拉取模式虽然已按账号缓存，但仍建议在 QQ / 微信混跑环境各做一次实机回归，确认探测结论不会受平台风控瞬时波动误导。
+- 背包土地类道具的 `land_ids` fallback 已补齐，但这类问题更偏协议兼容，后续最好补一条最小集成回归，而不是只依赖构建和静态检查。

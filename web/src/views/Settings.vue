@@ -12,7 +12,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import BaseTooltip from '@/components/ui/BaseTooltip.vue'
-import { getThemeBackgroundPreset, getThemeOption, LOGIN_BACKGROUND_PRESETS, THEME_OPTIONS, UI_BACKGROUND_SCOPE_OPTIONS } from '@/constants/ui-appearance'
+import { getThemeAppearanceConfig, getThemeBackgroundPreset, getThemeOption, getThemeWorkspaceVisualPreset, getWorkspaceAppearanceConfig, getWorkspaceVisualPreset, LOGIN_BACKGROUND_PRESETS, THEME_OPTIONS, UI_BACKGROUND_SCOPE_OPTIONS, UI_WORKSPACE_VISUAL_PRESETS } from '@/constants/ui-appearance'
 import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useFarmStore } from '@/stores/farm'
@@ -305,9 +305,11 @@ const modalConfig = ref({
 })
 const DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY = 30
 const DEFAULT_LOGIN_BACKGROUND_BLUR = 2
-const DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY = 60
-const DEFAULT_APP_BACKGROUND_BLUR = 8
+const DEFAULT_WORKSPACE_VISUAL_CONFIG = getWorkspaceAppearanceConfig('console')
+const DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY = DEFAULT_WORKSPACE_VISUAL_CONFIG.appBackgroundOverlayOpacity
+const DEFAULT_APP_BACKGROUND_BLUR = DEFAULT_WORKSPACE_VISUAL_CONFIG.appBackgroundBlur
 const loginBackgroundPresets = LOGIN_BACKGROUND_PRESETS
+const workspaceVisualPresets = UI_WORKSPACE_VISUAL_PRESETS
 
 const loginPreviewVisible = ref(false)
 const loginPreviewLoading = ref(false)
@@ -347,11 +349,60 @@ const appScenePreviewMaskStyle = computed(() => ({
 }))
 const currentThemeOption = computed(() => getThemeOption(appStore.colorTheme))
 const currentThemeBackgroundPreset = computed(() => getThemeBackgroundPreset(appStore.colorTheme))
+const currentWorkspaceVisualSummary = computed(() => {
+  const activePreset = workspaceVisualPresets.find(preset => isWorkspaceVisualPresetApplied(preset.key))
+  if (activePreset) {
+    return {
+      name: activePreset.name,
+      badge: activePreset.badge,
+      description: `控制业务页卡片的通透度与氛围感。当前为「${activePreset.name}」，适合根据屏幕环境切换阅读风格。`,
+    }
+  }
+
+  if (appStore.themeBackgroundLinked) {
+    return {
+      name: '主题联动自定义',
+      badge: '联动',
+      description: '当前主界面参数已被主题锁定背景注入为独立组合，下面 3 档视觉预设仍可手动改写。',
+    }
+  }
+
+  return {
+    name: '自定义参数',
+    badge: '自定义',
+    description: '当前主界面参数已脱离预设组合，可继续手动微调遮罩与模糊强度。',
+  }
+})
+function getWorkspacePreviewCardStyle(presetKey: string) {
+  if (presetKey === 'poster') {
+    return {
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderColor: 'rgba(255, 255, 255, 0.22)',
+      backdropFilter: 'blur(22px)',
+      WebkitBackdropFilter: 'blur(22px)',
+    }
+  }
+  if (presetKey === 'pure_glass') {
+    return {
+      backgroundColor: 'rgba(255, 255, 255, 0.07)',
+      borderColor: 'rgba(255, 255, 255, 0.3)',
+      backdropFilter: 'blur(28px)',
+      WebkitBackdropFilter: 'blur(28px)',
+    }
+  }
+  return {
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+  }
+}
 
 const themePresetBundles = computed(() => {
   return THEME_OPTIONS.map(theme => ({
     theme,
     preset: getThemeBackgroundPreset(theme.key),
+    workspacePreset: getWorkspaceVisualPreset(getThemeWorkspaceVisualPreset(theme.key)),
   }))
 })
 const orderedLoginBackgroundPresets = computed(() => {
@@ -388,8 +439,6 @@ function applyBackgroundPreset(preset: LoginBackgroundPreset) {
   }
   appStore.loginBackgroundOverlayOpacity = preset.overlayOpacity
   appStore.loginBackgroundBlur = preset.blur
-  appStore.appBackgroundOverlayOpacity = preset.appOverlayOpacity
-  appStore.appBackgroundBlur = preset.appBlur
   if (!preset.url) {
     loginPreviewLoadFailed.value = false
   }
@@ -401,7 +450,9 @@ function applyCurrentThemeBackgroundPreset() {
 
 function isThemeBundleApplied(themeKey: string) {
   const preset = getThemeBackgroundPreset(themeKey)
+  const workspacePresetKey = getThemeWorkspaceVisualPreset(themeKey)
   return appStore.colorTheme === themeKey
+    && appStore.workspaceVisualPreset === workspacePresetKey
     && appStore.loginBackground.trim() === preset.url.trim()
     && appStore.loginBackgroundOverlayOpacity === preset.overlayOpacity
     && appStore.loginBackgroundBlur === preset.blur
@@ -410,10 +461,34 @@ function isThemeBundleApplied(themeKey: string) {
 }
 
 function applyThemeBundle(themeKey: string) {
-  const preset = getThemeBackgroundPreset(themeKey)
-  appStore.backgroundScope = 'login_and_app'
-  appStore.colorTheme = themeKey
-  applyBackgroundPreset(preset)
+  Object.assign(appStore, getThemeAppearanceConfig(
+    themeKey,
+    appStore.backgroundScope === 'global' ? 'global' : 'login_and_app',
+  ))
+}
+
+function isWorkspaceVisualPresetApplied(presetKey: string) {
+  const preset = getWorkspaceAppearanceConfig(presetKey)
+  return appStore.workspaceVisualPreset === preset.workspaceVisualPreset
+    && appStore.appBackgroundOverlayOpacity === preset.appBackgroundOverlayOpacity
+    && appStore.appBackgroundBlur === preset.appBackgroundBlur
+}
+
+function applyWorkspaceVisualPreset(presetKey: string) {
+  const preset = getWorkspaceAppearanceConfig(presetKey)
+  appStore.workspaceVisualPreset = preset.workspaceVisualPreset
+  appStore.appBackgroundOverlayOpacity = preset.appBackgroundOverlayOpacity
+  appStore.appBackgroundBlur = preset.appBackgroundBlur
+  if (appStore.loginBackground.trim() && appStore.backgroundScope === 'login_only') {
+    appStore.backgroundScope = 'login_and_app'
+  }
+}
+
+function toggleThemeBackgroundLinked(enabled: boolean) {
+  appStore.themeBackgroundLinked = enabled
+  if (enabled) {
+    applyThemeBundle(appStore.colorTheme)
+  }
 }
 
 async function saveLoginAppearance() {
@@ -425,8 +500,10 @@ async function saveLoginAppearance() {
       backgroundScope: appStore.backgroundScope,
       loginBackgroundOverlayOpacity: appStore.loginBackgroundOverlayOpacity,
       loginBackgroundBlur: appStore.loginBackgroundBlur,
+      workspaceVisualPreset: appStore.workspaceVisualPreset,
       appBackgroundOverlayOpacity: appStore.appBackgroundOverlayOpacity,
       appBackgroundBlur: appStore.appBackgroundBlur,
+      themeBackgroundLinked: appStore.themeBackgroundLinked,
     })
     showAlert('登录页背景设置已保存')
   }
@@ -443,8 +520,10 @@ async function restoreDefaultLoginAppearance() {
   appStore.backgroundScope = 'login_only'
   appStore.loginBackgroundOverlayOpacity = DEFAULT_LOGIN_BACKGROUND_OVERLAY_OPACITY
   appStore.loginBackgroundBlur = DEFAULT_LOGIN_BACKGROUND_BLUR
+  appStore.workspaceVisualPreset = 'console'
   appStore.appBackgroundOverlayOpacity = DEFAULT_APP_BACKGROUND_OVERLAY_OPACITY
   appStore.appBackgroundBlur = DEFAULT_APP_BACKGROUND_BLUR
+  appStore.themeBackgroundLinked = false
   loginPreviewLoadFailed.value = false
   await saveLoginAppearance()
 }
@@ -580,17 +659,6 @@ async function handleBackgroundFileChange(event: Event) {
   }
 }
 
-const loginAppearanceEditorBindings = [
-  loginBackgroundPresets,
-  loginPreviewMaskStyle,
-  isSelectedLoginBackgroundPreset,
-  applyBackgroundPreset,
-  restoreDefaultLoginAppearance,
-  triggerBackgroundUpload,
-  handleBackgroundFileChange,
-] as const
-void loginAppearanceEditorBindings
-
 watch(() => appStore.loginBackground, (value) => {
   const nextUrl = value.trim()
   const requestId = ++loginPreviewRequestId
@@ -623,7 +691,7 @@ watch(() => appStore.loginBackground, (value) => {
 }, { immediate: true })
 
 const currentAccountName = computed(() => {
-  const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
+  const acc = accounts.value.find((a: any) => String(a.id || '') === String(currentAccountId.value || ''))
   return acc ? (acc.name || acc.nick || acc.id) : null
 })
 
@@ -632,6 +700,13 @@ const defaultReportConfig = {
   channel: 'webhook',
   endpoint: '',
   token: '',
+  smtpHost: '',
+  smtpPort: 465,
+  smtpSecure: true,
+  smtpUser: '',
+  smtpPass: '',
+  emailFrom: '',
+  emailTo: '',
   title: '经营汇报',
   hourlyEnabled: false,
   hourlyMinute: 5,
@@ -1165,6 +1240,11 @@ const channelOptions = [
   { label: 'WxPusher', value: 'wxpusher' },
 ]
 
+const reportChannelOptions = [
+  ...channelOptions,
+  { label: '邮件 (SMTP)', value: 'email' },
+]
+
 const reloginUrlModeOptions = [
   { label: '不需要', value: 'none' },
   { label: 'QQ直链', value: 'qq_link' },
@@ -1202,6 +1282,8 @@ const channelDocUrl = computed(() => {
 const reportChannelDocUrl = computed(() => {
   return CHANNEL_DOCS[localSettings.value.reportConfig.channel] || ''
 })
+
+const isReportEmailChannel = computed(() => localSettings.value.reportConfig.channel === 'email')
 
 const preferredSeedOptions = computed(() => {
   const options = [{ label: '自动选择', value: 0 }]
@@ -2603,7 +2685,7 @@ async function restoreTimingDefaults() {
                     <BaseSelect
                       v-model="localSettings.reportConfig.channel"
                       label="推送渠道"
-                      :options="channelOptions"
+                      :options="reportChannelOptions"
                       class="flex-1"
                     />
                     <a
@@ -2626,7 +2708,7 @@ async function restoreTimingDefaults() {
                   />
                 </div>
 
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div v-if="!isReportEmailChannel" class="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <BaseInput
                     v-model="localSettings.reportConfig.endpoint"
                     label="接口地址"
@@ -2639,6 +2721,60 @@ async function restoreTimingDefaults() {
                     label="Token"
                     type="text"
                     placeholder="非 Webhook 渠道通常必填"
+                  />
+                </div>
+
+                <div v-else class="space-y-4 rounded-2xl border border-white/10 bg-black/10 p-4">
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <BaseInput
+                      v-model="localSettings.reportConfig.smtpHost"
+                      label="SMTP 服务器"
+                      type="text"
+                      placeholder="例如 smtp.qq.com"
+                    />
+                    <BaseInput
+                      v-model.number="localSettings.reportConfig.smtpPort"
+                      label="SMTP 端口"
+                      type="number"
+                      placeholder="465 / 587"
+                    />
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <BaseInput
+                      v-model="localSettings.reportConfig.smtpUser"
+                      label="SMTP 用户名"
+                      type="text"
+                      placeholder="通常为邮箱账号"
+                    />
+                    <BaseInput
+                      v-model="localSettings.reportConfig.smtpPass"
+                      label="SMTP 密码 / 授权码"
+                      type="password"
+                      placeholder="邮箱 SMTP 授权码"
+                    />
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <BaseInput
+                      v-model="localSettings.reportConfig.emailFrom"
+                      label="发件邮箱"
+                      type="text"
+                      placeholder="可留空，默认取 SMTP 用户名"
+                    />
+                    <BaseInput
+                      v-model="localSettings.reportConfig.emailTo"
+                      label="收件邮箱"
+                      type="text"
+                      placeholder="支持多个，逗号分隔"
+                    />
+                  </div>
+
+                  <BaseSwitch
+                    v-model="localSettings.reportConfig.smtpSecure"
+                    label="直连 TLS"
+                    hint="465 端口通常开启；587 端口会自动尝试 STARTTLS。"
+                    recommend="on"
                   />
                 </div>
 
@@ -3337,13 +3473,47 @@ async function restoreTimingDefaults() {
             </div>
 
             <div class="border border-white/10 rounded-2xl bg-black/5 p-4 dark:bg-white/5">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="glass-text-main text-sm font-bold">
+                    主题锁定背景
+                  </div>
+                  <p class="glass-text-muted mt-1 text-xs leading-5">
+                    开启后，只要切换这 5 套主题，就会自动同步对应的内置背景、遮罩和模糊参数。
+                  </p>
+                </div>
+                <BaseSwitch
+                  :model-value="appStore.themeBackgroundLinked"
+                  @update:model-value="toggleThemeBackgroundLinked(!!$event)"
+                />
+              </div>
+              <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <span
+                  class="rounded-full px-3 py-1 text-[11px] font-bold"
+                  :class="appStore.themeBackgroundLinked
+                    ? 'bg-primary-500/15 text-primary-500'
+                    : 'bg-white/10 text-gray-500 dark:bg-black/20 dark:text-gray-300'"
+                >
+                  {{ appStore.themeBackgroundLinked ? '已开启自动联动' : '当前为手动搭配模式' }}
+                </span>
+                <BaseButton
+                  variant="secondary"
+                  size="sm"
+                  @click="applyThemeBundle(appStore.colorTheme)"
+                >
+                  立即按当前主题对齐
+                </BaseButton>
+              </div>
+            </div>
+
+            <div class="border border-white/10 rounded-2xl bg-black/5 p-4 dark:bg-white/5">
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div class="glass-text-main text-sm font-bold">
                     5 套主题联动方案
                   </div>
                   <p class="glass-text-muted mt-1 text-xs leading-5">
-                    每套方案都会同步主题色、背景图、登录页参数和主界面参数，并默认启用“登录页 + 主界面”。
+                    每套方案都会同步主题色、背景图、登录页参数、主界面参数和业务页卡片风格，并默认启用“登录页 + 主界面”。
                   </p>
                 </div>
                 <div class="rounded-full bg-white/10 px-3 py-1 text-[11px] text-primary-500 dark:bg-black/20">
@@ -3414,6 +3584,9 @@ async function restoreTimingDefaults() {
                       <span>登录 {{ bundle.preset.overlayOpacity }}% / {{ bundle.preset.blur }}px</span>
                       <span>主界面 {{ bundle.preset.appOverlayOpacity }}% / {{ bundle.preset.appBlur }}px</span>
                     </div>
+                    <div class="glass-text-muted text-[11px]">
+                      业务页风格 {{ bundle.workspacePreset.name }}
+                    </div>
                   </div>
                 </button>
               </div>
@@ -3440,6 +3613,76 @@ async function restoreTimingDefaults() {
                   <p class="glass-text-muted mt-1 text-[11px] leading-5">
                     {{ option.description }}
                   </p>
+                </button>
+              </div>
+            </div>
+
+            <div class="border border-white/10 rounded-2xl bg-black/5 p-4 dark:bg-white/5">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div class="glass-text-main text-sm font-bold">
+                    主界面视觉预设
+                  </div>
+                  <p class="glass-text-muted mt-1 text-xs leading-5">
+                    {{ currentWorkspaceVisualSummary.description }}
+                  </p>
+                </div>
+                <div class="rounded-full bg-primary-500/12 px-3 py-1 text-[11px] text-primary-500 font-bold">
+                  {{ currentWorkspaceVisualSummary.badge }}
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 mt-4 gap-4 md:grid-cols-3">
+                <button
+                  v-for="preset in workspaceVisualPresets"
+                  :key="preset.key"
+                  type="button"
+                  class="group overflow-hidden border rounded-2xl bg-black/5 p-3 text-left transition-all duration-300 dark:bg-white/5 hover:shadow-lg hover:-translate-y-0.5"
+                  :class="isWorkspaceVisualPresetApplied(preset.key)
+                    ? 'border-primary-500 shadow-lg shadow-primary-500/15'
+                    : 'border-white/10 dark:border-white/10'"
+                  @click="applyWorkspaceVisualPreset(preset.key)"
+                >
+                  <div class="relative h-24 overflow-hidden border border-white/10 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.14),transparent_58%),linear-gradient(180deg,rgba(255,255,255,0.08),rgba(15,23,42,0.22))] p-3">
+                    <div class="absolute inset-0 from-white/10 via-transparent to-black/20 bg-gradient-to-br" />
+                    <div class="relative z-10 h-full flex gap-3">
+                      <div class="w-12 border rounded-xl p-2" :style="getWorkspacePreviewCardStyle(preset.key)">
+                        <div class="h-2.5 w-5 rounded bg-white/60" />
+                        <div class="mt-2 h-1.5 rounded bg-white/30" />
+                        <div class="mt-1.5 h-1.5 rounded bg-white/20" />
+                      </div>
+                      <div class="flex flex-1 flex-col gap-2">
+                        <div class="border rounded-xl px-3 py-2" :style="getWorkspacePreviewCardStyle(preset.key)">
+                          <div class="h-2.5 w-16 rounded bg-white/50" />
+                        </div>
+                        <div class="grid grid-cols-2 flex-1 gap-2">
+                          <div class="border rounded-xl" :style="getWorkspacePreviewCardStyle(preset.key)" />
+                          <div class="border rounded-xl" :style="getWorkspacePreviewCardStyle(preset.key)" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 flex items-center justify-between gap-3">
+                    <div class="glass-text-main text-sm font-semibold">
+                      {{ preset.name }}
+                    </div>
+                    <span
+                      class="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                      :class="isWorkspaceVisualPresetApplied(preset.key)
+                        ? 'bg-primary-500/15 text-primary-500'
+                        : 'bg-white/10 text-gray-300 dark:bg-black/20 dark:text-gray-200'"
+                    >
+                      {{ isWorkspaceVisualPresetApplied(preset.key) ? '当前方案' : preset.badge }}
+                    </span>
+                  </div>
+                  <p class="glass-text-muted mt-2 text-xs leading-5">
+                    {{ preset.description }}
+                  </p>
+                  <div class="glass-text-muted mt-3 flex items-center justify-between text-[11px]">
+                    <span>遮罩 {{ preset.appOverlayOpacity }}%</span>
+                    <span>模糊 {{ preset.appBlur }}px</span>
+                  </div>
                 </button>
               </div>
             </div>

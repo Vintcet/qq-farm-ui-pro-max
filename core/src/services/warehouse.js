@@ -86,6 +86,11 @@ async function useItem(itemId, count = 1, landIds = []) {
         itemWriter.uint32(8).int64(toLong(itemId));  // item.id
         itemWriter.uint32(16).int64(toLong(count));  // item.count
         itemWriter.ldelim();
+        for (const landId of (Array.isArray(landIds) ? landIds : [])) {
+            const normalizedLandId = toNum(landId);
+            if (normalizedLandId <= 0) continue;
+            writer.uint32(24).int64(toLong(normalizedLandId)); // field 3: land_ids
+        }
         const fallbackBody = writer.finish();
 
         const { body: fallbackReplyBody } = await sendMsgAsync('gamepb.itempb.ItemService', 'Use', fallbackBody);
@@ -144,6 +149,13 @@ function buildBagItemMeta(id) {
         price: info ? (Number(info.price) || 0) : 0,
         level: info ? (Number(info.level) || 0) : 0,
         interactionType: info && info.interaction_type ? String(info.interaction_type) : '',
+        desc: info && info.desc ? String(info.desc) : '',
+        effectDesc: info && info.effectDesc ? String(info.effectDesc) : '',
+        rarity: info ? (Number(info.rarity) || 0) : 0,
+        rarityColor: info && info.rarity_color ? String(info.rarity_color) : '',
+        canUse: info ? Number(info.can_use) === 1 : false,
+        maxCount: info ? (Number(info.max_count) || 0) : 0,
+        maxOwn: info ? (Number(info.max_own) || 0) : 0,
     };
 }
 
@@ -365,6 +377,13 @@ async function getBagDetail() {
             level: meta.level,
             itemType: meta.itemType,
             interactionType: meta.interactionType,
+            desc: meta.desc,
+            effectDesc: meta.effectDesc,
+            rarity: meta.rarity,
+            rarityColor: meta.rarityColor,
+            canUse: meta.canUse,
+            maxCount: meta.maxCount,
+            maxOwn: meta.maxOwn,
         });
 
         if (!merged.has(id)) {
@@ -379,6 +398,13 @@ async function getBagDetail() {
                 price: meta.price,
                 level: meta.level,
                 interactionType: meta.interactionType,
+                desc: meta.desc,
+                effectDesc: meta.effectDesc,
+                rarity: meta.rarity,
+                rarityColor: meta.rarityColor,
+                canUse: meta.canUse,
+                maxCount: meta.maxCount,
+                maxOwn: meta.maxOwn,
                 hoursText: '',
             });
         }
@@ -403,6 +429,53 @@ async function getBagDetail() {
         return Number(a.id || 0) - Number(b.id || 0);
     });
     return { totalKinds: items.length, items, originalItems };
+}
+
+function normalizeRewardItems(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .map((item) => {
+            const id = toNum(item && item.id);
+            const count = toNum(item && item.count);
+            if (id <= 0 || count <= 0) return null;
+            const meta = buildBagItemMeta(id);
+            return {
+                id,
+                count,
+                name: meta.name,
+                category: meta.category,
+                image: meta.image,
+                itemType: meta.itemType,
+                price: meta.price,
+                level: meta.level,
+                interactionType: meta.interactionType,
+                desc: meta.desc,
+                effectDesc: meta.effectDesc,
+                rarity: meta.rarity,
+                rarityColor: meta.rarityColor,
+                canUse: meta.canUse,
+            };
+        })
+        .filter(Boolean);
+}
+
+function summarizeRewardItems(items = []) {
+    const normalized = normalizeRewardItems(items);
+    if (normalized.length <= 0) return '';
+    return normalized.map((item) => `${item.name}x${item.count}`).join(' / ');
+}
+
+function formatUseResult(reply, context = {}) {
+    const rewardItems = normalizeRewardItems(reply && reply.items);
+    const summary = summarizeRewardItems(reply && reply.items);
+    return {
+        itemId: toNum(context && context.itemId),
+        count: Math.max(1, toNum(context && context.count) || 1),
+        landIds: Array.isArray(context && context.landIds) ? context.landIds.map((id) => toNum(id)).filter((id) => id > 0) : [],
+        rewardItems,
+        rewardSummary: summary,
+        message: summary || '使用成功',
+        raw: reply || {},
+    };
 }
 
 // ============ 出售逻辑 ============
@@ -782,6 +855,9 @@ module.exports = {
     sellSelectedItems,
     useItem,
     batchUseItems,
+    normalizeRewardItems,
+    summarizeRewardItems,
+    formatUseResult,
     openFertilizerGiftPacksSilently,
     getFertilizerGiftDailyState: () => ({
         key: 'fertilizer_gift_open',

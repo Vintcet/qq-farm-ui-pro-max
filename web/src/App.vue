@@ -105,7 +105,8 @@ watch(adminToken, (newToken) => {
 /* Global styles */
 body {
   margin: 0;
-  font-family: 'DM Sans', sans-serif;
+  font-family:
+    'Avenir Next', 'Segoe UI Variable Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', sans-serif;
 }
 
 .app-scene-background {

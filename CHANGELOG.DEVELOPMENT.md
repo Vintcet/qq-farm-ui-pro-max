@@ -6,6 +6,53 @@
 
 ## 📅 最近更新
 
+### v4.5.11 - 外观联动补正、邮件汇报与近期优化二次复查 (2026-03-09)
+
+#### 🎨 外观链路补正
+- ✅ **主题整套联动恢复主界面参数同步**: `getThemeAppearanceConfig()` 重新返回业务页遮罩与模糊参数，修复“整套主题方案 / 主题锁定背景”在切换主题后只更新登录页、未同步主界面氛围参数的回归。
+- ✅ **主界面视觉预设入口补齐**: 设置页新增 `workspaceVisualPreset` 可视化卡片，`console / poster / pure_glass` 三种业务页风格不再停留在 store / 后端已接入但界面无入口的半接入状态。
+- ✅ **设置页占位绑定清理**: 去掉仅为绕过 lint 的临时绑定数组，改为真实模板接入，避免后续再出现“代码里有配置、界面上找不到入口”的维护噪声。
+- ✅ **UI 资源清理机制上线**: 服务端新增未引用登录背景与过期生成图标缓存的自动清理逻辑，减少 `data/ui-backgrounds/` 和 `data/asset-cache/item-icons/` 的长期堆积。
+- ✅ **外链字体与示例背景本地化**: UnoCSS 不再构建时拉取 Google Fonts，`sample-red-horse` 示例背景也改为本地 SVG，离线/受限网络构建更稳定。
+- ✅ **最小自动校验补齐**: 新增 `pnpm test:ui-assets` 与 `pnpm -C web check:ui-appearance`，分别覆盖 UI 资源清理和主题联动参数完整性。
+
+#### 📬 账号与汇报链路补强
+- ✅ **经营汇报新增 SMTP 邮件渠道**: `reportConfig`、服务端校验、推送下发链路和设置页表单已补齐 `email` 渠道，可直接配置 SMTP 服务器、发件箱与收件箱发送经营汇报。
+- ✅ **账号登录后立即落库**: 管理端保存账号时会直接触发 `persistAccountsNow()`，减少“刚扫码成功但服务异常退出，最新 code/ticket 还没刷进数据库”的窗口期。
+- ✅ **好友拉取模式按账号自适应锁定**: `SyncAll / GetAll` 不再全局共用一个兼容开关，而是按账号探测并缓存，避免一个账号的兼容结论污染另一个账号。
+- ✅ **好友与周期状态日志去重**: 相同摘要日志按 TTL 限流，减少长时间挂机时的重复刷屏和误判噪声。
+
+#### 🧺 背包与资产使用补正
+- ✅ **Worker 补齐 `useBagItem` 调用面**: 主进程可直接下发背包道具使用请求，和前端精细化背包面板保持一致。
+- ✅ **地块类道具兼容分支继续携带 `land_ids`**: 即使走旧接口编码 fallback，也不会再丢失目标地块参数。
+- ✅ **图标导入与缓存清理工具补齐**: 新增 `import:item-icons` 脚本和资源校验，方便后续把物品图标按固定目录导入并维持缓存整洁。
+
+#### 🔎 二次复查结论
+- ✅ **已修复两处可感知问题**: 一处是主题整套联动参数不完整，一处是主界面视觉预设入口缺失。
+- ✅ **主题联动范围保持用户选择**: 修复“主题锁定背景”和抽屉“套用主题背景”在当前已选 `global` 时回退为 `login_and_app` 的问题，避免全局背景范围被静默降级。
+- ✅ **主题联动混合态文案已校准**: 实测发现“主题锁定背景”会注入独立主界面遮罩/模糊组合，但顶部提示仍沿用上次手动预设名称，现已改为按真实参数识别；混合态明确显示为“主题联动自定义”。
+- ✅ **整套主题补齐业务页风格映射**: `getThemeAppearanceConfig()` 现在会同时写入 `workspaceVisualPreset`，让 5 套主题在切换时同步对应的业务页卡片风格；实测 `Ocean` 整套保存后已落成 `pure_glass`。
+- ✅ **地块类道具使用链路补正**: 背包详情里对目标土地的多选数量现在会严格受当前物品库存约束，避免“已选地块数”与实际请求 `count` 不一致；使用成功后还会立即刷新土地状态，减少“明明已浇水/播种但右侧仍显示旧状态”的错觉。
+- ✅ **UseRequest 兼容编码补齐 land_ids**: 兼容旧服务端编码分支时，现已把 `land_ids` 一并写入 fallback 请求，避免土地类道具在特殊接口兼容路径下丢失目标地块参数。
+- ✅ **建议项已落地执行**: 外链字体告警和静态资源缺少回收策略这两项后续建议已转化为实际代码，不再只是文档建议。
+- ✅ **背包详情模板构建阻断已兜住**: 针对 `BagPanel.vue` 在大型 SFC 下被 `vue-tsc` 漏识别的少量模板引用，已补最小桥接绑定，恢复 lint / build 闭环。
+- ✅ **SMTP 汇报配置已串通前后端**: 设置页、后端归一化、推送分发与“是否已配置”判断口径已统一，不会出现界面能填、服务端却忽略的半接入状态。
+- ✅ **账号最新登录态持久化更稳**: 实测保存账号后会立即触发数据库写入，不再完全依赖 2 秒异步批量刷盘。
+
+#### 🧪 回归结论
+- ✅ `node --check core/src/config/gameConfig.js` 通过
+- ✅ `node --check core/src/controllers/admin.js` 通过
+- ✅ `node --check core/src/services/smtp-mailer.js` 通过
+- ✅ `node --check core/src/services/push.js` 通过
+- ✅ `node --check core/src/services/report-service.js` 通过
+- ✅ `node --check core/src/models/store.js` 通过
+- ✅ `node --check core/src/services/ui-assets.js` 通过
+- ✅ `node --check core/src/services/mall.js` 通过
+- ✅ `pnpm test:ui-assets` 通过
+- ✅ `pnpm -C web check:ui-appearance` 通过
+- ✅ `pnpm -C web build` 通过（Google Fonts 外链告警已消失）
+- ✅ `pnpm -C core build:release` 通过
+
 ### v4.5.10 - 前端 lint 收口与 CI 恢复 (2026-03-08)
 
 #### 🧹 前端规范与稳定性修复

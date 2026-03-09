@@ -1,4 +1,4 @@
-import { defineConfig, presetAttributify, presetIcons, presetUno, presetWebFonts } from 'unocss'
+import { defineConfig, presetAttributify, presetIcons, presetUno } from 'unocss'
 
 export default defineConfig({
   content: {
@@ -10,6 +10,11 @@ export default defineConfig({
     },
   },
   theme: {
+    fontFamily: {
+      sans: '"Avenir Next", "Segoe UI Variable Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif',
+      serif: '"Iowan Old Style", "Palatino Linotype", "Noto Serif SC", Georgia, serif',
+      mono: '"SFMono-Regular", "JetBrains Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace',
+    },
     colors: {
 
       primary: {
@@ -29,8 +34,8 @@ export default defineConfig({
       theme: {
         bg: 'var(--theme-bg)',
         darkbg: 'var(--theme-dark-bg)',
-      }
-    }
+      },
+    },
   },
   safelist: [
     'i-carbon-chart-pie',
@@ -48,7 +53,7 @@ export default defineConfig({
     'i-carbon-close',
     'i-carbon-edit',
     'i-carbon-checkmark',
-    'i-carbon-notification'
+    'i-carbon-notification',
   ],
   presets: [
     presetUno(),
@@ -60,13 +65,6 @@ export default defineConfig({
       warn: false,
       collections: {
         fas: () => import('@iconify-json/fa-solid/icons.json').then(i => i.default),
-      },
-    }),
-    presetWebFonts({
-      fonts: {
-        sans: 'DM Sans',
-        serif: 'DM Serif Display',
-        mono: 'DM Mono',
       },
     }),
   ],

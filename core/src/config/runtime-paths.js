@@ -52,6 +52,16 @@ function getShareFilePath() {
     return path.join(getAppRootForWritable(), 'share.txt');
 }
 
+function getAssetCacheDir(...segments) {
+    return path.join(getDataDir(), 'asset-cache', ...segments);
+}
+
+function ensureAssetCacheDir(...segments) {
+    const dir = getAssetCacheDir(...segments);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
 module.exports = {
     isPackaged,
     getResourcePath,
@@ -62,4 +72,6 @@ module.exports = {
     ensureLogDir,
     getLogFile,
     getShareFilePath,
+    getAssetCacheDir,
+    ensureAssetCacheDir,
 };
