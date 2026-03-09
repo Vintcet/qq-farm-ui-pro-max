@@ -105,6 +105,46 @@ load_deploy_env() {
     fi
 }
 
+compose_has_service() {
+    local service_name="$1"
+    if ! "${DOCKER[@]}" compose config --services >/tmp/qq-farm-compose-services.$$ 2>/dev/null; then
+        return 1
+    fi
+    if grep -Fxq "${service_name}" /tmp/qq-farm-compose-services.$$; then
+        rm -f /tmp/qq-farm-compose-services.$$
+        return 0
+    fi
+    rm -f /tmp/qq-farm-compose-services.$$
+    return 1
+}
+
+mysql_cli_exec() {
+    local mode="$1"
+    shift
+
+    if [ "${mode}" = "compose" ]; then
+        "${DOCKER[@]}" compose exec -T "${MYSQL_SERVICE}" "$@"
+        return 0
+    fi
+
+    "${DOCKER[@]}" exec -i "${MYSQL_CONTAINER_NAME}" "$@"
+}
+
+detect_mysql_exec_mode() {
+    if compose_has_service "${MYSQL_SERVICE}"; then
+        echo "compose"
+        return 0
+    fi
+
+    if "${DOCKER[@]}" container inspect "${MYSQL_CONTAINER_NAME}" >/dev/null 2>&1; then
+        echo "container"
+        return 0
+    fi
+
+    print_error "未找到可用的 MySQL 服务或容器：service=${MYSQL_SERVICE}, container=${MYSQL_CONTAINER_NAME}"
+    exit 1
+}
+
 wait_for_mysql() {
     local timeout="${1:-240}"
     local started_at
@@ -135,13 +175,17 @@ wait_for_mysql() {
 
 mysql_exec() {
     local sql="$1"
-    "${DOCKER[@]}" compose exec -T "${MYSQL_SERVICE}" \
+    local exec_mode
+    exec_mode="$(detect_mysql_exec_mode)"
+    mysql_cli_exec "${exec_mode}" \
         mysql --default-character-set=utf8mb4 -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" -Nse "${sql}"
 }
 
 mysql_file() {
     local sql_file="$1"
-    "${DOCKER[@]}" compose exec -T "${MYSQL_SERVICE}" \
+    local exec_mode
+    exec_mode="$(detect_mysql_exec_mode)"
+    mysql_cli_exec "${exec_mode}" \
         mysql --default-character-set=utf8mb4 -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${sql_file}"
 }
 
@@ -183,10 +227,12 @@ ensure_column() {
 backup_database() {
     local backup_dir="${DEPLOY_DIR}/backups"
     local backup_file="${backup_dir}/mysql-repair-$(date +%Y%m%d_%H%M%S).sql"
+    local exec_mode
 
     mkdir -p "${backup_dir}"
     print_info "备份当前 MySQL 数据到 ${backup_file}"
-    "${DOCKER[@]}" compose exec -T "${MYSQL_SERVICE}" \
+    exec_mode="$(detect_mysql_exec_mode)"
+    mysql_cli_exec "${exec_mode}" \
         mysqldump -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" > "${backup_file}"
     print_success "数据库备份完成"
 }
