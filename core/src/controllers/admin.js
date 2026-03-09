@@ -1677,7 +1677,14 @@ function startAdminServer(dataProvider) {
                 ? String(payload.id || '')
                 : String((data.accounts[data.accounts.length - 1] || {}).id || '');
             if (savedAccountId && typeof store.persistAccountsNow === 'function') {
-                await store.persistAccountsNow(savedAccountId);
+                try {
+                    await store.persistAccountsNow(savedAccountId, { strict: true });
+                } catch (persistErr) {
+                    if (typeof store.getAccountsFresh === 'function') {
+                        await store.getAccountsFresh({ force: true }).catch(() => { });
+                    }
+                    throw persistErr;
+                }
             }
             if (provider.addAccountLog) {
                 const accountId = savedAccountId;

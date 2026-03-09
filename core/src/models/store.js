@@ -190,6 +190,10 @@ const globalConfig = {
     suspendUntilMap: {},
 };
 
+const DEFAULT_CLUSTER_CONFIG = {
+    dispatcherStrategy: 'round_robin',
+};
+
 function clampUiNumber(value, fallback, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
@@ -640,10 +644,17 @@ async function loadGlobalConfigFromDB() {
     try {
         const pool = getPool();
         const [rows] = await pool.query('SELECT * FROM account_configs');
-        accountFallbackConfig = cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG);
+        accountFallbackConfig = normalizeAccountConfig(globalConfig.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
         globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
         globalConfig.accountConfigs = {};
-        globalConfig.ui = { ...DEFAULT_UI_CONFIG };
+        globalConfig.ui = normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG);
+        globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
+        globalConfig.timingConfig = normalizeTimingConfig(globalConfig.timingConfig, DEFAULT_TIMING_CONFIG);
+        globalConfig.trialCardConfig = normalizeTrialCardConfig(globalConfig.trialCardConfig, DEFAULT_TRIAL_CARD_CONFIG);
+        globalConfig.clusterConfig = normalizeClusterConfig(globalConfig.clusterConfig, DEFAULT_CLUSTER_CONFIG);
+        globalConfig.thirdPartyApi = (globalConfig.thirdPartyApi && typeof globalConfig.thirdPartyApi === 'object')
+            ? { ...globalConfig.thirdPartyApi }
+            : {};
 
         for (const r of rows) {
             let automation = {};
@@ -685,9 +696,23 @@ async function loadGlobalConfigFromDB() {
                 globalConfig.ui = normalizeUIConfig({ ...globalConfig.ui, ...adv.ui }, globalConfig.ui);
             }
 
-            // Cluster Config (Optional backwards compat from adv)
+            // 兼容历史上写进 advanced_settings 的全局字段。
+            if (adv.offlineReminder) {
+                globalConfig.offlineReminder = normalizeOfflineReminder({ ...globalConfig.offlineReminder, ...adv.offlineReminder });
+            }
+            if (adv.timingConfig) {
+                globalConfig.timingConfig = normalizeTimingConfig(adv.timingConfig, getTimingConfig());
+            }
+            if (adv.trialCardConfig) {
+                globalConfig.trialCardConfig = normalizeTrialCardConfig(adv.trialCardConfig, getTrialCardConfig());
+            }
+            if (adv.thirdPartyApi && typeof adv.thirdPartyApi === 'object') {
+                globalConfig.thirdPartyApi = { ...globalConfig.thirdPartyApi, ...adv.thirdPartyApi };
+            }
+
+            // Cluster Config (optional backwards compat from adv)
             if (adv.clusterConfig) {
-                globalConfig.clusterConfig = { ...globalConfig.clusterConfig, ...adv.clusterConfig };
+                globalConfig.clusterConfig = normalizeClusterConfig({ ...globalConfig.clusterConfig, ...adv.clusterConfig }, globalConfig.clusterConfig);
             }
         }
 
@@ -695,13 +720,93 @@ async function loadGlobalConfigFromDB() {
         console.error('加载全局配置失败:', e.message);
     }
 }
-function loadGlobalConfig() { }
+let _globalConfigRefreshPromise = null;
+
+function loadGlobalConfigFromFile() {
+    const stored = readJsonFile(STORE_FILE, () => ({}));
+    const persistedDefault = (stored.defaultAccountConfig && typeof stored.defaultAccountConfig === 'object')
+        ? stored.defaultAccountConfig
+        : DEFAULT_ACCOUNT_CONFIG;
+    accountFallbackConfig = normalizeAccountConfig(persistedDefault, DEFAULT_ACCOUNT_CONFIG);
+    globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
+
+    const persistedAccountConfigs = (stored.accountConfigs && typeof stored.accountConfigs === 'object')
+        ? stored.accountConfigs
+        : {};
+    const nextAccountConfigs = {};
+    for (const [id, cfg] of Object.entries(persistedAccountConfigs)) {
+        const sid = String(id || '').trim();
+        if (!sid) continue;
+        nextAccountConfigs[sid] = normalizeAccountConfig(cfg, accountFallbackConfig);
+    }
+    globalConfig.accountConfigs = nextAccountConfigs;
+    globalConfig.ui = normalizeUIConfig(stored.ui, DEFAULT_UI_CONFIG);
+    globalConfig.offlineReminder = normalizeOfflineReminder(stored.offlineReminder);
+    globalConfig.adminPasswordHash = String(stored.adminPasswordHash || '');
+    globalConfig.thirdPartyApi = (stored.thirdPartyApi && typeof stored.thirdPartyApi === 'object')
+        ? { ...stored.thirdPartyApi }
+        : {};
+    globalConfig.timingConfig = normalizeTimingConfig(stored.timingConfig, DEFAULT_TIMING_CONFIG);
+    globalConfig.trialCardConfig = normalizeTrialCardConfig(stored.trialCardConfig, DEFAULT_TRIAL_CARD_CONFIG);
+    globalConfig.clusterConfig = normalizeClusterConfig(stored.clusterConfig, DEFAULT_CLUSTER_CONFIG);
+    globalConfig.suspendUntilMap = (stored.suspendUntilMap && typeof stored.suspendUntilMap === 'object')
+        ? { ...stored.suspendUntilMap }
+        : {};
+}
+
+function buildPersistedGlobalConfigSnapshot() {
+    const accountConfigs = {};
+    for (const [id, cfg] of Object.entries(globalConfig.accountConfigs || {})) {
+        const sid = String(id || '').trim();
+        if (!sid) continue;
+        accountConfigs[sid] = cloneAccountConfig(normalizeAccountConfig(cfg, accountFallbackConfig));
+    }
+
+    return {
+        accountConfigs,
+        defaultAccountConfig: cloneAccountConfig(accountFallbackConfig),
+        ui: getUI(),
+        offlineReminder: getOfflineReminder(),
+        adminPasswordHash: String(globalConfig.adminPasswordHash || ''),
+        thirdPartyApi: { ...(globalConfig.thirdPartyApi || {}) },
+        timingConfig: getTimingConfig(),
+        trialCardConfig: getTrialCardConfig(),
+        clusterConfig: normalizeClusterConfig(globalConfig.clusterConfig, DEFAULT_CLUSTER_CONFIG),
+        suspendUntilMap: { ...(globalConfig.suspendUntilMap || {}) },
+    };
+}
+
+function loadGlobalConfig() {
+    loadGlobalConfigFromFile();
+    if (!_globalConfigRefreshPromise) {
+        _globalConfigRefreshPromise = loadGlobalConfigFromDB()
+            .catch(() => undefined)
+            .finally(() => {
+                _globalConfigRefreshPromise = null;
+            });
+    }
+}
 
 function sanitizeGlobalConfigBeforeSave() {
     // default 配置统一白名单净化
     accountFallbackConfig = normalizeAccountConfig(globalConfig.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
     globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
     globalConfig.ui = normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG);
+    globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
+    globalConfig.adminPasswordHash = String(globalConfig.adminPasswordHash || '');
+    globalConfig.timingConfig = normalizeTimingConfig(globalConfig.timingConfig, DEFAULT_TIMING_CONFIG);
+    globalConfig.trialCardConfig = normalizeTrialCardConfig(globalConfig.trialCardConfig, DEFAULT_TRIAL_CARD_CONFIG);
+    globalConfig.clusterConfig = normalizeClusterConfig(globalConfig.clusterConfig, DEFAULT_CLUSTER_CONFIG);
+    globalConfig.thirdPartyApi = (globalConfig.thirdPartyApi && typeof globalConfig.thirdPartyApi === 'object')
+        ? { ...globalConfig.thirdPartyApi }
+        : {};
+    globalConfig.suspendUntilMap = (globalConfig.suspendUntilMap && typeof globalConfig.suspendUntilMap === 'object')
+        ? Object.fromEntries(
+            Object.entries(globalConfig.suspendUntilMap)
+                .map(([id, value]) => [String(id || '').trim(), Number(value) || 0])
+                .filter(([id]) => id),
+        )
+        : {};
 
     const currentAccountIds = new Set(
         normalizeAccountsData(loadAccounts()).accounts
@@ -728,7 +833,12 @@ function sanitizeGlobalConfigBeforeSave() {
 let _globalConfigSaveTimer = null;
 function saveGlobalConfigImmediate() {
     sanitizeGlobalConfigBeforeSave();
-    const pool = getPool();
+    try {
+        writeJsonFileAtomic(STORE_FILE, buildPersistedGlobalConfigSnapshot());
+    } catch (e) {
+        console.error('保存全局配置文件失败:', e.message);
+    }
+
     try {
         transaction(async (conn) => {
             for (const [id, cfg] of Object.entries(globalConfig.accountConfigs)) {
@@ -746,7 +856,11 @@ function saveGlobalConfigImmediate() {
                     reportConfig: normalizeReportConfig(cfg.reportConfig, DEFAULT_ACCOUNT_CONFIG.reportConfig),
                     reportState: normalizeReportState(cfg.reportState, DEFAULT_ACCOUNT_CONFIG.reportState),
                     ui: normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG),
-                    clusterConfig: globalConfig.clusterConfig || { dispatcherStrategy: 'round_robin' }
+                    offlineReminder: normalizeOfflineReminder(globalConfig.offlineReminder),
+                    timingConfig: getTimingConfig(),
+                    trialCardConfig: getTrialCardConfig(),
+                    thirdPartyApi: { ...(globalConfig.thirdPartyApi || {}) },
+                    clusterConfig: normalizeClusterConfig(globalConfig.clusterConfig, DEFAULT_CLUSTER_CONFIG),
                 });
                 const automationKeys = cfg.automation || {};
                 await conn.query(`
@@ -797,9 +911,6 @@ function setAdminPasswordHash(hash) {
     saveGlobalConfig();
     return globalConfig.adminPasswordHash;
 }
-
-// 初始化加载
-loadGlobalConfig();
 
 function getAutomation(accountId) {
     return { ...getAccountConfigSnapshot(accountId).automation };
@@ -1151,9 +1262,10 @@ function parseAccountAuthData(raw) {
 // ============ 账号管理 ============
 async function loadAccountsFromDB() {
     try {
+        const refreshVersion = _accountsMutationVersion;
         const pool = getPool();
         const [rows] = await pool.query('SELECT * FROM accounts');
-        let mapped = rows.map((r) => {
+        const mapped = rows.map((r) => {
             const authData = parseAccountAuthData(r.auth_data);
             const platform = r.platform || 'qq';
             const uin = String(r.uin || authData.uin || '').trim();
@@ -1174,6 +1286,9 @@ async function loadAccountsFromDB() {
                 updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
             };
         });
+        if (refreshVersion !== _accountsMutationVersion) {
+            return cachedAccountsData;
+        }
         cachedAccountsData = normalizeAccountsData({ accounts: mapped, nextId: 1000 + mapped.length });
         _accountsLoadedAt = Date.now();
         return cachedAccountsData;
@@ -1184,6 +1299,7 @@ async function loadAccountsFromDB() {
 let cachedAccountsData = { accounts: [], nextId: 1 };
 let _accountsLoadedAt = 0;
 let _accountsRefreshPromise = null;
+let _accountsMutationVersion = 0;
 function loadAccounts() {
     return cachedAccountsData;
 }
@@ -1210,19 +1326,24 @@ function queueAccountPersistIds(data, touchedAccountIds) {
         .forEach(id => _pendingAccountPersistIds.add(id));
 }
 
-async function persistPendingAccounts() {
+async function persistPendingAccounts(options = {}) {
+    const strict = !!(options && options.strict);
     const pool = getPool();
     if (!pool) {
+        if (strict) {
+            throw new Error('MySQL 连接池不可用，账号未写入数据库');
+        }
         return;
     }
 
     const snapshot = cloneAccountsData(cachedAccountsData);
     const pendingIds = Array.from(_pendingAccountPersistIds);
     if (!pendingIds.length) {
-        return;
+        return { failedIds: [], persistedIds: [] };
     }
 
     const failedIds = [];
+    const failures = [];
     for (const accountId of pendingIds) {
         const acc = snapshot.accounts.find(item => String(item && item.id) === String(accountId));
         if (!acc) {
@@ -1257,16 +1378,28 @@ async function persistPendingAccounts() {
                 ]
             );
         } catch (e) {
-            failedIds.push(String(accountId));
+            const failedId = String(accountId);
+            failedIds.push(failedId);
+            failures.push({ accountId: failedId, message: e.message });
             console.error("DB Async Insert Account Failed", e.message);
         }
     }
 
     _pendingAccountPersistIds = new Set(failedIds);
+    if (strict && failures.length > 0) {
+        const error = new Error(`账号写入数据库失败：${failures.map(item => `ID ${item.accountId} - ${item.message}`).join('；')}`);
+        error.failedIds = failedIds;
+        throw error;
+    }
+    return {
+        failedIds,
+        persistedIds: pendingIds.filter(id => !failedIds.includes(String(id))),
+    };
 }
 
 function saveAccounts(data, touchedAccountIds) {
     cachedAccountsData = normalizeAccountsData(data); // 内存立即生效
+    _accountsMutationVersion += 1;
     _accountsLoadedAt = Date.now();
     queueAccountPersistIds(cachedAccountsData, touchedAccountIds);
     if (_accountsSaveTimer) clearTimeout(_accountsSaveTimer);
@@ -1279,13 +1412,13 @@ function saveAccounts(data, touchedAccountIds) {
     }, 2000);
 }
 
-async function persistAccountsNow(touchedAccountIds) {
+async function persistAccountsNow(touchedAccountIds, options = {}) {
     queueAccountPersistIds(cachedAccountsData, touchedAccountIds);
     if (_accountsSaveTimer) {
         clearTimeout(_accountsSaveTimer);
         _accountsSaveTimer = null;
     }
-    await persistPendingAccounts();
+    return await persistPendingAccounts(options);
 }
 
 function getAccounts() {
@@ -1301,7 +1434,7 @@ async function getAccountsFresh(options = {}) {
     if (cacheIsFresh) {
         return cloneAccountsData(cachedAccountsData);
     }
-    if (_accountsRefreshPromise) {
+    if (_accountsRefreshPromise && !force) {
         return _accountsRefreshPromise;
     }
 
@@ -1434,34 +1567,11 @@ const DEFAULT_TIMING_CONFIG = {
     optimizedSchedulerWheelSize: 600,
 };
 
-// ============ 体验卡相关配置 ============
-const DEFAULT_TRIAL_CARD_CONFIG = {
-    enabled: true,           // 是否允许生成体验卡
-    dailyLimit: 100,         // 每日最大发卡数量
-    cooldownMs: 4 * 60 * 60 * 1000, // IP申请冷却时间 (默认 4 小时)
-    days: 1,                 // 体验卡默认天数
-    maxAccounts: 1,          // 结合使用，体验卡最多只能添加 1 个账号
-    adminRenewEnabled: true, // 管理员是否可以一键续费该类型
-    userRenewEnabled: false, // 用户是否可以自助续费该类型
-};
-
-/**
- * 获取系统级时间参数配置（合并默认值）
- */
-function getTimingConfig() {
-    const saved = (globalConfig.timingConfig && typeof globalConfig.timingConfig === 'object')
-        ? globalConfig.timingConfig
-        : {};
-    return { ...DEFAULT_TIMING_CONFIG, ...saved };
-}
-
-/**
- * 保存系统级时间参数配置（局部更新）
- */
-function setTimingConfig(cfg) {
-    const current = getTimingConfig();
+function normalizeTimingConfig(cfg, fallback = DEFAULT_TIMING_CONFIG) {
+    const current = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_TIMING_CONFIG;
     const input = (cfg && typeof cfg === 'object') ? cfg : {};
     const next = {};
+
     for (const key of Object.keys(DEFAULT_TIMING_CONFIG)) {
         if (input[key] !== undefined) {
             if (typeof DEFAULT_TIMING_CONFIG[key] === 'number') {
@@ -1475,28 +1585,26 @@ function setTimingConfig(cfg) {
             next[key] = current[key];
         }
     }
-    globalConfig.timingConfig = next;
-    saveGlobalConfig();
-    return getTimingConfig();
+
+    return next;
 }
 
-/**
- * 获取体验卡配置（合并默认值）
- */
-function getTrialCardConfig() {
-    const saved = (globalConfig.trialCardConfig && typeof globalConfig.trialCardConfig === 'object')
-        ? globalConfig.trialCardConfig
-        : {};
-    return { ...DEFAULT_TRIAL_CARD_CONFIG, ...saved };
-}
+// ============ 体验卡相关配置 ============
+const DEFAULT_TRIAL_CARD_CONFIG = {
+    enabled: true,           // 是否允许生成体验卡
+    dailyLimit: 100,         // 每日最大发卡数量
+    cooldownMs: 4 * 60 * 60 * 1000, // IP申请冷却时间 (默认 4 小时)
+    days: 1,                 // 体验卡默认天数
+    maxAccounts: 1,          // 结合使用，体验卡最多只能添加 1 个账号
+    adminRenewEnabled: true, // 管理员是否可以一键续费该类型
+    userRenewEnabled: false, // 用户是否可以自助续费该类型
+};
 
-/**
- * 保存体验卡配置（局部更新）
- */
-function setTrialCardConfig(cfg) {
-    const current = getTrialCardConfig();
+function normalizeTrialCardConfig(cfg, fallback = DEFAULT_TRIAL_CARD_CONFIG) {
+    const current = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_TRIAL_CARD_CONFIG;
     const input = (cfg && typeof cfg === 'object') ? cfg : {};
     const next = {};
+
     for (const key of Object.keys(DEFAULT_TRIAL_CARD_CONFIG)) {
         if (input[key] !== undefined) {
             if (typeof DEFAULT_TRIAL_CARD_CONFIG[key] === 'boolean') {
@@ -1509,7 +1617,54 @@ function setTrialCardConfig(cfg) {
             next[key] = current[key];
         }
     }
-    globalConfig.trialCardConfig = next;
+
+    return next;
+}
+
+function normalizeClusterConfig(cfg, fallback = DEFAULT_CLUSTER_CONFIG) {
+    const current = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_CLUSTER_CONFIG;
+    const input = (cfg && typeof cfg === 'object') ? cfg : {};
+    const rawStrategy = String(
+        input.dispatcherStrategy !== undefined
+            ? input.dispatcherStrategy
+            : (current.dispatcherStrategy || DEFAULT_CLUSTER_CONFIG.dispatcherStrategy),
+    ).trim().toLowerCase();
+
+    return {
+        dispatcherStrategy: rawStrategy === 'least_load' ? 'least_load' : 'round_robin',
+    };
+}
+
+/**
+ * 获取系统级时间参数配置（合并默认值）
+ */
+function getTimingConfig() {
+    return normalizeTimingConfig(globalConfig.timingConfig, DEFAULT_TIMING_CONFIG);
+}
+
+/**
+ * 保存系统级时间参数配置（局部更新）
+ */
+function setTimingConfig(cfg) {
+    const current = getTimingConfig();
+    globalConfig.timingConfig = normalizeTimingConfig(cfg, current);
+    saveGlobalConfig();
+    return getTimingConfig();
+}
+
+/**
+ * 获取体验卡配置（合并默认值）
+ */
+function getTrialCardConfig() {
+    return normalizeTrialCardConfig(globalConfig.trialCardConfig, DEFAULT_TRIAL_CARD_CONFIG);
+}
+
+/**
+ * 保存体验卡配置（局部更新）
+ */
+function setTrialCardConfig(cfg) {
+    const current = getTrialCardConfig();
+    globalConfig.trialCardConfig = normalizeTrialCardConfig(cfg, current);
     saveGlobalConfig();
     return getTrialCardConfig();
 }
@@ -1599,13 +1754,11 @@ module.exports = {
     setTrialCardConfig,
 
     getClusterConfig: () => {
-        if (!globalConfig.clusterConfig) {
-            globalConfig.clusterConfig = { dispatcherStrategy: 'round_robin' };
-        }
+        globalConfig.clusterConfig = normalizeClusterConfig(globalConfig.clusterConfig, DEFAULT_CLUSTER_CONFIG);
         return { ...globalConfig.clusterConfig };
     },
     setClusterConfig: (cfg) => {
-        globalConfig.clusterConfig = { ...globalConfig.clusterConfig, ...(cfg || {}) };
+        globalConfig.clusterConfig = normalizeClusterConfig({ ...globalConfig.clusterConfig, ...(cfg || {}) }, DEFAULT_CLUSTER_CONFIG);
         saveGlobalConfig();
         return { ...globalConfig.clusterConfig };
     }
@@ -1646,6 +1799,9 @@ function setThirdPartyApiConfig(cfg) {
     saveGlobalConfig();
     return getThirdPartyApiConfig();
 }
+
+// 初始化加载
+loadGlobalConfig();
 
 module.exports.getAccountsFullPaged = getAccountsFullPaged;
 module.exports.getThirdPartyApiConfig = getThirdPartyApiConfig;

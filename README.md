@@ -2,7 +2,7 @@
 
 > 🔴 **醒目提醒：现在扫码登录失效，等其他大佬修复，本仓库暂停更新功能，仅修复bug了。**基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
 
-![版本](https://img.shields.io/badge/版本-v4.5.6-blue)
+![版本](https://img.shields.io/badge/版本-v4.5.12-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-20+-green)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-orange)
 ![Redis](https://img.shields.io/badge/Redis-6.0-red)
@@ -25,7 +25,7 @@
 **数据库与存储**
 - **主数据库**: MySQL 8.0 (mysql2 3.18.2)
 - **缓存**: Redis (ioredis 5.10.0)
-- **本地存储**: SQLite (better-sqlite3 12.6.2) - 离线模式
+- **兼容依赖**: better-sqlite3 12.6.2（仅保留历史兼容代码，不再作为部署或账号持久化方案）
 - **协议缓冲**: Protobuf.js 8.0.0 (腾讯 QQ 农场私有协议)
 
 **日志与通知**
@@ -41,7 +41,6 @@
 [<img src="https://skillicons.dev/icons?i=socketio" height="48" title="Socket.io 4" />](https://socket.io/)
 [<img src="https://skillicons.dev/icons?i=mysql" height="48" title="MySQL 8" />](https://www.mysql.com/)
 [<img src="https://skillicons.dev/icons?i=redis" height="48" title="Redis" />](https://redis.io/)
-[<img src="https://skillicons.dev/icons?i=sqlite" height="48" title="SQLite" />](https://www.sqlite.org/)
 
 ### 前端技术
 
@@ -260,6 +259,8 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 本节默认假设服务器可以直接访问 GitHub 和 Docker Hub 官方源。一键脚本默认从 GitHub 官方地址下载部署文件，并从 Docker Hub 官方仓库拉取镜像；若主程序镜像或 `ipad860` 镜像拉取失败，脚本会回退到下载当前仓库源码包并在服务器本地构建。
 如果你的服务器在中国大陆网络环境，优先查看 [deploy/README.cn.md](deploy/README.cn.md)，里面单独整理了离线包和预载镜像的部署方式。
 
+自 `v4.5.12` 起，一键安装默认按 MySQL 正式链路初始化，账号新增会在返回成功前强制落 MySQL；只要拉到 `v4.5.12+` 主程序镜像，全新安装不会再复现“添加账号成功但切换/刷新后消失”的问题。
+
 ### 一键脚本
 
 ```bash
@@ -329,8 +330,13 @@ cd /opt/qq-farm-bot-current
 bash update-app.sh
 
 # 如需切到指定版本
-bash update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.10
+bash update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.12
 ```
+
+补充说明：
+- `deploy/init-db/01-init.sql` 只会在 MySQL 空数据卷首次启动时执行。
+- 已部署环境如果直接更新到 `v4.5.12+`，主程序启动阶段会自动补齐缺失表/列，并修复账号持久化“假成功”问题。
+- 如果服务器仍在运行旧镜像，即使部署脚本和 SQL 已更新，账号切换后丢失的问题仍可能复现。
 
 ## 📊 验证部署成功
 
@@ -634,8 +640,8 @@ Docker 会自动选择适合您系统架构的镜像版本。
 ---
 
 **维护者**: smdk000  
-**最后更新**: 2026-03-06  
-**版本**: v4.5.6
+**最后更新**: 2026-03-09  
+**版本**: v4.5.12
 
 ## 多用户模式
 
@@ -850,6 +856,8 @@ qq-farm-bot-ui/
 ```
 
 #### SQLite 架构（单机/离线模式）
+> 以下内容仅用于历史版本迁移说明，当前版本不再作为正式部署方案。
+
 ```
 用户操作 → Web 面板 → HTTP API → DataProvider → Worker
                                            ↓

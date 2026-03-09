@@ -29,6 +29,8 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/fresh-install.sh)
 ```
 
+自 `v4.5.12` 起，全新一键安装会按最新 MySQL 结构初始化，账号新增会在返回成功前强制落 MySQL；只要主程序镜像版本不低于 `v4.5.12`，不会再复现“添加账号后切换/刷新消失”。
+
 脚本会自动：
 
 - 安装或检查 Docker / Docker Compose
@@ -94,7 +96,7 @@ cd /opt/qq-farm-bot-current
 bash update-app.sh
 
 # 如需切到指定版本
-bash update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.10
+bash update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.12
 ```
 
 ## 验证部署
@@ -151,7 +153,9 @@ docker compose restart
 
 ## 说明
 
-- `deploy/init-db/01-init.sql` 用于 MySQL 空数据卷首次初始化。
+- `deploy/init-db/01-init.sql` 仅用于 MySQL 空数据卷首次初始化。
+- 已部署环境更新主程序时不会重新执行 `init-db/01-init.sql`，而是依赖主程序启动时的自动迁移补齐缺失表/列。
+- 如果仍在运行旧版 `qq-farm-bot` 镜像，部署脚本和 SQL 已更新也无法消除旧版本的账号持久化缺陷。
 - 默认管理员会在首次启动时自动创建，不会写死在 SQL 里。
 - `REDIS_PASSWORD` 默认为空；如启用密码，主程序与 ipad860 会使用同一值。
 - ARM64 服务器上，`ipad860` 以 `linux/amd64` 方式运行，依赖宿主机的 QEMU 兼容能力。

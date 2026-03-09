@@ -105,7 +105,7 @@ curl http://127.0.0.1:3080/api/ping
 
 ```bash
 cd /opt/qq-farm-bot-current
-SKIP_DOCKER_PULL=1 ./update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.10
+SKIP_DOCKER_PULL=1 ./update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.12
 ```
 
 这个模式只更新主程序，不会重启：
@@ -113,6 +113,12 @@ SKIP_DOCKER_PULL=1 ./update-app.sh --image smdk000/qq-farm-bot-ui:v4.5.10
 - `qq-farm-mysql`
 - `qq-farm-redis`
 - `qq-farm-ipad860`
+
+补充说明：
+
+- `deploy/init-db/01-init.sql` 只在 MySQL 空数据卷首次启动时执行。
+- 从 `v4.5.12` 开始，主程序启动时会自动补齐缺失表/列，并修复账号持久化“返回成功但未落库”的问题。
+- 所以已部署服务器要彻底消除“添加账号后切换/刷新消失”，关键是把主程序镜像更新到 `v4.5.12+`，不只是替换脚本文件。
 
 ## 如果服务器可以直连官方源
 
