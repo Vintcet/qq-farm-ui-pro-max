@@ -427,7 +427,7 @@ function getPlantNameBySeedId(seedId) {
     const plant = seedToPlant.get(numericSeedId);
     if (plant && plant.name) return plant.name;
 
-    const item = seedItemMap.get(numericSeedId) || itemInfoMap.get(numericSeedId);
+    const item = seedItemMap.get(numericSeedId);
     const effectDesc = normalizeSeedDisplayName(item && item.effectDesc);
     if (effectDesc) return effectDesc;
 
@@ -537,7 +537,7 @@ function getSeedImageBySeedId(seedId) {
     const directImage = seedImageMap.get(numericSeedId);
     if (directImage) return directImage;
 
-    const item = seedItemMap.get(numericSeedId) || itemInfoMap.get(numericSeedId);
+    const item = seedItemMap.get(numericSeedId);
     const assetName = item && item.asset_name ? String(item.asset_name).trim() : '';
     if (assetName) {
         const assetImage = seedAssetImageMap.get(assetName);
@@ -640,7 +640,7 @@ function buildFallbackPlantConfig(seedId, plantId = 0) {
     const numericSeedId = Number(seedId) || 0;
     if (numericSeedId <= 0) return null;
 
-    const item = seedItemMap.get(numericSeedId) || itemInfoMap.get(numericSeedId);
+    const item = seedItemMap.get(numericSeedId);
     if (!item) return null;
 
     return {

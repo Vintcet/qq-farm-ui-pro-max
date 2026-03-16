@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
     getAllSeeds,
     getPlantById,
+    getPlantBySeedId,
     getPlantName,
     getPlantNameBySeedId,
     getSeedImageBySeedId,
@@ -30,4 +31,13 @@ test('all seeds includes ItemInfo-derived seeds outside Plant.json coverage', ()
     assert.equal(seed && seed.name, '荷包牡丹');
     assert.equal(seed && seed.requiredLevel, 61);
     assert.equal(String(seed && seed.image).endsWith('/seed_images_named/Crop_249_Seed.png'), true);
+});
+
+test('non-seed items do not fall back to plant configs', () => {
+    assert.equal(getPlantBySeedId(1002), undefined);
+    assert.equal(getPlantBySeedId(3001), undefined);
+    assert.equal(getPlantBySeedId(80001), undefined);
+    assert.equal(getPlantBySeedId(90004), undefined);
+    assert.equal(getPlantNameBySeedId(1002), '种子1002');
+    assert.equal(getSeedImageBySeedId(1002), '');
 });
