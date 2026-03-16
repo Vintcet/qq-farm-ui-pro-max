@@ -102,6 +102,36 @@ pull_with_retry() {
     return 1
 }
 
+resolve_platform_digest_ref() {
+    local source_image="$1"
+    local platform="$2"
+
+    docker buildx imagetools inspect "${source_image}" 2>/dev/null | awk -v platform="${platform}" '
+        $1 == "Name:" { name = $2 }
+        $1 == "Platform:" && $2 == platform { print name; exit }
+    '
+}
+
+materialize_platform_local_tag() {
+    local source_image="$1"
+    local platform="$2"
+    local label="$3"
+    local resolved_ref=""
+    local version_slug="${RELEASE_VERSION//[^a-zA-Z0-9_.-]/-}"
+    local platform_slug="${platform//\//-}"
+    local local_tag="qq-farm-offline-cache:${label}-${version_slug}-${platform_slug}"
+
+    resolved_ref="$(resolve_platform_digest_ref "${source_image}" "${platform}")"
+    if [ -z "${resolved_ref}" ]; then
+        resolved_ref="${source_image}"
+    fi
+
+    pull_with_retry "${resolved_ref}" "${platform}" >/dev/null || return 1
+
+    docker tag "${resolved_ref}" "${local_tag}"
+    echo "${local_tag}"
+}
+
 resolve_app_image_source() {
     local version_tag="$1"
     local candidate=""
@@ -160,24 +190,34 @@ create_deploy_bundle() {
 export_stack_archive() {
     local arch="$1"
     local output_file="$2"
+    local app_local_tag=""
+    local mysql_local_tag=""
+    local redis_local_tag=""
+    local ipad860_local_tag=""
 
     print_info "导出 ${arch} 离线镜像包..."
 
-    pull_with_retry "${APP_IMAGE_SOURCE}" "linux/${arch}"
-    pull_with_retry "${MYSQL_IMAGE}" "linux/${arch}"
-    pull_with_retry "${REDIS_IMAGE}" "linux/${arch}"
-    pull_with_retry "${IPAD860_IMAGE}" "linux/amd64"
+    app_local_tag="$(materialize_platform_local_tag "${APP_IMAGE_SOURCE}" "linux/${arch}" "app-${arch}")"
+    mysql_local_tag="$(materialize_platform_local_tag "${MYSQL_IMAGE}" "linux/${arch}" "mysql-${arch}")"
+    redis_local_tag="$(materialize_platform_local_tag "${REDIS_IMAGE}" "linux/${arch}" "redis-${arch}")"
+    ipad860_local_tag="$(materialize_platform_local_tag "${IPAD860_IMAGE}" "linux/amd64" "ipad860-${arch}")"
 
     if [ "${arch}" = "arm64" ]; then
         print_warning "arm64 离线包中的 ipad860 仍为 linux/amd64，目标宿主机需支持 QEMU。"
     fi
 
     docker save \
-        "${APP_IMAGE_SOURCE}" \
-        "${MYSQL_IMAGE}" \
-        "${REDIS_IMAGE}" \
-        "${IPAD860_IMAGE}" \
+        "${app_local_tag}" \
+        "${mysql_local_tag}" \
+        "${redis_local_tag}" \
+        "${ipad860_local_tag}" \
         | gzip > "${output_file}"
+
+    docker image rm -f \
+        "${app_local_tag}" \
+        "${mysql_local_tag}" \
+        "${redis_local_tag}" \
+        "${ipad860_local_tag}" >/dev/null 2>&1 || true
 
     print_success "镜像包已导出: ${output_file}"
 }

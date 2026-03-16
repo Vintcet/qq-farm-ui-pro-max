@@ -29,10 +29,21 @@
 - ✅ **封禁账号保护已统一落地**: 账号启动/重启、批量启动、自启动批次与 Worker 被踢下线回写都已识别 `1000016 / 封禁`，避免重复撞线。
 - ✅ **QQ 好友抓取默认改为保守链路**: 默认优先 `SyncAll` + 缓存兜底，只有显式开启 `qqFriendFetchMultiChain` 才恢复多链路探测。
 - ✅ **设置页 / 仪表盘 / 账号页 / 侧栏完成一轮统一整理**: 平铺布局、顶部吸附、封禁状态标签、高风险说明区和低高度适配继续收口。
+- ✅ **离线包导出链路已兼容多架构正式 tag**: `deploy/scripts/export-offline-packages.sh` 改为按平台 digest 拉取并本地重打 tag，再执行 `docker save`，解决正式 release tag 导出离线包时的 manifest digest 缺失问题。
 
 #### 📌 本轮发布说明
 - 📌 **QQ 平台默认更保守**: `成熟秒收取`、`60 秒施肥(防偷)`、`精准蹲守偷菜` 与 QQ 多链路好友抓取不会在未授权时偷偷执行，保存后只签发有限时窗口。
 - 📌 **README 与发布模板已改为中文记录 `v4.5.21`**: 根 README、部署文档、ChangeLog 与 Update.log 已同步追加本轮中文更新说明，便于后续 GitHub Release 与服务器升级核对。
+
+#### 🧪 本轮验收
+- ✅ `pnpm check:announcements`
+- ✅ `pnpm check:doc-links`
+- ✅ `pnpm test:workspace-audit-scripts`
+- ✅ `pnpm lint:web`
+- ✅ `pnpm test:frontend`
+- ✅ `pnpm -C core exec eslint src/controllers/admin/account-control-routes.js src/controllers/admin/account-management-routes.js src/controllers/admin/account-settings-routes.js src/models/store.js src/runtime/data-provider.js src/runtime/runtime-engine.js src/runtime/worker-manager.js src/services/config-validator.js src/services/farm.js src/services/friend/friend-actions.js src/services/friend/friend-scanner.js src/utils/network.js`
+- ✅ `node --test core/__tests__/admin-account-control-routes.test.js core/__tests__/admin-account-management-routes.test.js core/__tests__/admin-account-settings-routes.test.js core/__tests__/data-provider-save-settings.test.js core/__tests__/data-provider-account-restart.test.js core/__tests__/data-provider-runtime-reload.test.js core/__tests__/runtime-engine-relogin-skip.test.js core/__tests__/worker-manager-account-backfill.test.js core/__tests__/friend-actions-get-game-friends.test.js core/__tests__/friend-actions-get-game-friends-direct.test.js core/__tests__/friend-actions-cache-fallback.test.js core/__tests__/friend-scanner-identifier.test.js core/__tests__/network-friend-seed-notify.test.js core/__tests__/farm-bag-priority.test.js core/__tests__/store-account-settings-persistence.test.js core/__tests__/store-ws-error-persistence.test.js core/__tests__/store-system-settings.test.js core/__tests__/store-account-mode.test.js core/__tests__/store-runtime-init.test.js core/__tests__/store-account-config-identity-archive.test.js`
+- ✅ `bash scripts/release/build-release-assets.sh --version v4.5.21 --output-dir release-assets`
 
 ### 开发补记 - v4.5.20 发布链路归一与本地 Release 产物打包 (2026-03-11)
 
